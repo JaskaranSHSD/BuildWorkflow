@@ -1,0 +1,77 @@
+    private AITool CreateSftpTool(ToolDefinition tool)
+    {
+        return AIFunctionFactory.Create(
+            (string input) => ExecuteSftpAsync(tool.SftpConfiguration, input),
+            name: SanitizeName(tool.Name),
+            description: string.IsNullOrWhiteSpace(tool.Description) ? "List, upload, or download files over SFTP." : tool.Description);
+    }
+
+    private static async Task<string> ExecuteSftpAsync(SftpToolConfiguration? config, string input)
+    {
+        if (config == null || string.IsNullOrWhiteSpace(config.Host) || string.IsNullOrWhiteSpace(config.Username))
+        {
+            return "No SFTP configuration is available for this tool.";
+        }
+
+        var trimmed = (input ?? string.Empty).Trim();
+        try
+        {
+            using var client = new SftpClient(config.Host, config.Port, config.Username, config.Password ?? string.Empty);
+            client.Connect();
+
+            if (trimmed.StartsWith("list", StringComparison.OrdinalIgnoreCase))
+            {
+                var path = string.IsNullOrWhiteSpace(trimmed["list".Length..].Trim(':')) ? config.RemoteBasePath : trimmed["list".Length..].Trim().TrimStart(':').Trim();
+                if (string.IsNullOrWhiteSpace(path)) path = ".";
+                var entries = client.ListDirectory(path)
+                    .Where(e => !e.IsDirectory || (e.Name != "." && e.Name != ".."))
+                    .Select(e => e.Name + (e.IsDirectory ? "/" : ""))
+                    .ToList();
+                return System.Text.Json.JsonSerializer.Serialize(entries);
+            }
+
+            if (trimmed.StartsWith("upload:", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = trimmed["upload:".Length..].Split("::", 2, StringSplitOptions.None);
+                if (parts.Length < 2)
+                {
+                    return "Usage: upload:localPath::remotePath";
+                }
+                var localPath = parts[0].Trim();
+                var remotePath = parts[1].Trim();
+                if (!System.IO.File.Exists(localPath))
+                {
+                    return $"Local file not found: {localPath}";
+                }
+                using var stream = System.IO.File.OpenRead(localPath);
+                client.UploadFile(stream, remotePath);
+                return $"Uploaded {localPath} to {remotePath}.";
+            }
+
+            if (trimmed.StartsWith("download:", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = trimmed["download:".Length..].Split("::", 2, StringSplitOptions.None);
+                if (parts.Length < 2)
+                {
+                    return "Usage: download:remotePath::localPath";
+                }
+                var remotePath = parts[0].Trim();
+                var localPath = parts[1].Trim();
+                var directory = Path.GetDirectoryName(localPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                using var stream = System.IO.File.Create(localPath);
+                client.DownloadFile(remotePath, stream);
+                return $"Downloaded {remotePath} to {localPath}.";
+            }
+
+            return "Usage: list [path], upload:localPath::remotePath, or download:remotePath::localPath";
+        }
+        catch (Exception ex)
+        {
+            return $"SFTP operation failed: {ex.Message}";
+        }
+    }
+

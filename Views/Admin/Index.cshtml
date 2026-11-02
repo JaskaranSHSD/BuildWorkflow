@@ -1,0 +1,25 @@
+@{
+    ViewData["Title"] = "Admin Dashboard";
+}
+
+<h2>Admin Dashboard</h2>
+<p>Manage AI models, tools, RAG buckets, users, and access assignments.</p>
+
+@if (TempData["Message"] != null)
+{
+    <div class="alert alert-success">@TempData["Message"]</div>
+}
+<div class="row">
+    <div class="col-md-3"><div class="card p-3"><h5>AI Models</h5><p class="display-6">@ViewBag.ModelCount</p><a asp-action="Models" class="btn btn-outline-primary btn-sm">Manage</a></div></div>
+    <div class="col-md-3"><div class="card p-3"><h5>Tools</h5><p class="display-6">@ViewBag.ToolCount</p><a asp-action="Tools" class="btn btn-outline-primary btn-sm">Manage</a></div></div>
+    <div class="col-md-3"><div class="card p-3"><h5>RAG Buckets</h5><p class="display-6">@ViewBag.BucketCount</p><a asp-action="RagBuckets" class="btn btn-outline-primary btn-sm">Manage</a></div></div>
+    <div class="col-md-3"><div class="card p-3"><h5>Users</h5><p class="display-6">@ViewBag.UserCount</p><a asp-action="Users" class="btn btn-outline-primary btn-sm">Manage</a></div></div>
+</div>
+<div class="card p-3 mt-3">
+    <h5>Temporary Files</h5>
+    <p class="text-muted small mb-2">Delete all files stored under TempFilesLocal.</p>
+    <form asp-action="CleanTempFiles" method="post" onsubmit="return confirm('Delete all temporary files?');">
+        <button type="submit" class="btn btn-warning btn-sm">Clean TempFilesLocal</button>
+    </form>
+</div>
+

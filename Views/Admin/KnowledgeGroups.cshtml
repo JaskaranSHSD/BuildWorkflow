@@ -1,0 +1,76 @@
+@model List<BuildWorkflow.Models.KnowledgeGroup>
+@{
+    ViewData["Title"] = "Knowledge Groups";
+    var buckets = ViewBag.Buckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Knowledge Groups</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createGroupModal">Add Group</button>
+</div>
+
+<div class="modal fade" id="createGroupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="CreateKnowledgeGroup" method="post">
+                <div class="modal-header"><h5 class="modal-title">Add Knowledge Group</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-2"><label class="form-label">Name *</label><input name="name" class="form-control" required /></div>
+                    <div class="mb-2"><label class="form-label">Description</label><textarea name="description" class="form-control" rows="3"></textarea></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Add</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editGroupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="UpdateKnowledgeGroup" method="post">
+                <div class="modal-header"><h5 class="modal-title">Edit Knowledge Group</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="hidden" name="id" id="edit-group-id" />
+                    <div class="mb-2"><label class="form-label">Name *</label><input name="name" id="edit-group-name" class="form-control" required /></div>
+                    <div class="mb-2"><label class="form-label">Description</label><textarea name="description" id="edit-group-description" class="form-control" rows="3"></textarea></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary">Save</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th>Buckets</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var g in Model)
+    {
+        var count = buckets.Count(b => b.KnowledgeGroupId == g.Id);
+        <tr>
+            <td>@g.Name</td>
+            <td>@g.Description</td>
+            <td>@count</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editGroupModal"
+                        data-id="@g.Id" data-name="@g.Name" data-description="@g.Description">Edit</button>
+                <form asp-action="DeleteKnowledgeGroup" method="post" class="d-inline">
+                    <input type="hidden" name="id" value="@g.Id" />
+                    <button class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+<a asp-action="RagBuckets" class="btn btn-secondary">Back</a>
+
+<script>
+document.addEventListener('show.bs.modal', function (event) {
+    const modal = document.getElementById('editGroupModal');
+    if (!modal || event.target !== modal) return;
+    const btn = event.relatedTarget;
+    if (!btn) return;
+    document.getElementById('edit-group-id').value = btn.getAttribute('data-id') || '';
+    document.getElementById('edit-group-name').value = btn.getAttribute('data-name') || '';
+    document.getElementById('edit-group-description').value = btn.getAttribute('data-description') || '';
+});
+</script>

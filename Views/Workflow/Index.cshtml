@@ -1,0 +1,598 @@
+﻿@{
+    ViewData["Title"] = "Workflows";
+}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Workflows</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createWorkflowModal">Create workflow</button>
+  </div>
+
+  <div class="modal fade" id="createWorkflowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Create Workflow</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label">Workflow Name <span class="text-danger">*</span></label>
+          <input id="wfName" class="form-control mb-2" placeholder="Name" required />
+          <div class="form-text mb-2">Required workflow name.</div>
+          <label class="form-label">System Instruction</label>
+          <textarea id="wfSystem" class="form-control mb-2" placeholder="System instruction (optional)"></textarea>
+          <div class="form-text mb-2">Optional system-level guidance.</div>
+          <label class="form-label">User Instruction <span class="text-danger">*</span></label>
+          <textarea id="wfUser" class="form-control mb-2" placeholder="User instruction" required></textarea>
+          <div class="form-text mb-2">Required instructions for each run.</div>
+          <div class="mb-2">
+            <label class="form-label">AI Model</label>
+            <select id="wfModel" class="form-select">
+              <option value="">Default model</option>
+              @foreach (var m in (ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new()))
+              {
+                <option value="@m.Id">@m.Name</option>
+              }
+            </select>
+            <div class="form-text">Choose from models available to you. Leave default to use the configured default model.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Next Workflow</label>
+            <select id="wfNext" class="form-select">
+              <option value="">None (stop after this workflow)</option>
+              @foreach (var w in (ViewBag.Workflows as List<BuildWorkflow.Models.WorkflowDefinition> ?? new()))
+              {
+                <option value="@w.Id">@w.Name</option>
+              }
+            </select>
+            <div class="form-text">When this workflow completes successfully, it can enqueue the selected workflow and pass its result forward.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Tools</label>
+            <div id="wfTools" class="border rounded p-2" style="max-height:140px; overflow:auto;">
+              @foreach (var t in (ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new()))
+              {
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="@t.Id" id="tool_@t.Id" />
+                  <label class="form-check-label" for="tool_@t.Id">@t.Name</label>
+                </div>
+              }
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">RAG buckets</label>
+            <div id="wfBuckets" class="border rounded p-2" style="max-height:140px; overflow:auto;">
+              @foreach (var b in (ViewBag.RagBuckets as List<BuildWorkflow.Models.RagBucket> ?? new()))
+              {
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="@b.Id" id="bucket_@b.Id" />
+                  <label class="form-check-label" for="bucket_@b.Id">@b.Name</label>
+                </div>
+              }
+            </div>
+          </div>
+          <input id="wfFiles" type="file" class="form-control mb-2" multiple />
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="createWorkflow()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="editWorkflowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Workflow</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="editWfId" />
+          <label class="form-label">Workflow Name <span class="text-danger">*</span></label>
+          <input id="editWfName" class="form-control mb-2" placeholder="Name" required />
+          <label class="form-label">System Instruction</label>
+          <textarea id="editWfSystem" class="form-control mb-2" placeholder="System instruction (optional)"></textarea>
+          <label class="form-label">User Instruction <span class="text-danger">*</span></label>
+          <textarea id="editWfUser" class="form-control mb-2" placeholder="User instruction" required></textarea>
+          <div class="mb-2">
+            <label class="form-label">AI Model</label>
+            <select id="editWfModel" class="form-select">
+              <option value="">Default model</option>
+              @foreach (var m in (ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new()))
+              {
+                <option value="@m.Id">@m.Name</option>
+              }
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Next Workflow</label>
+            <select id="editWfNext" class="form-select">
+              <option value="">None (stop after this workflow)</option>
+              @foreach (var w in (ViewBag.Workflows as List<BuildWorkflow.Models.WorkflowDefinition> ?? new()))
+              {
+                <option value="@w.Id">@w.Name</option>
+              }
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Tools</label>
+            <div id="editWfTools" class="border rounded p-2" style="max-height:140px; overflow:auto;">
+              @foreach (var t in (ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new()))
+              {
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="@t.Id" id="editTool_@t.Id" />
+                  <label class="form-check-label" for="editTool_@t.Id">@t.Name</label>
+                </div>
+              }
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">RAG buckets</label>
+            <div id="editWfBuckets" class="border rounded p-2" style="max-height:140px; overflow:auto;">
+              @foreach (var b in (ViewBag.RagBuckets as List<BuildWorkflow.Models.RagBucket> ?? new()))
+              {
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" value="@b.Id" id="editBucket_@b.Id" />
+                  <label class="form-check-label" for="editBucket_@b.Id">@b.Name</label>
+                </div>
+              }
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Attached files</label>
+            <div id="editWfCurrentFiles" class="small text-muted mb-2">-</div>
+            <input id="editWfFiles" type="file" class="form-control" multiple />
+            <div class="form-text">Select files to replace the currently attached files. Leave empty to keep them.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <a id="editWfHistoryLink" href="/Workflow/History" class="btn btn-outline-info border border-info">History</a>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="updateWorkflow()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="shareWorkflowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Share Workflow</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="shareWfId" />
+          <div class="row g-2 mb-3">
+            <div class="col-md-9">
+              <select id="shareUserSelect" class="form-select"></select>
+            </div>
+            <div class="col-md-3">
+              <button type="button" class="btn btn-primary w-100" onclick="shareWorkflow()">Share</button>
+            </div>
+          </div>
+          <div id="shareList"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="scheduleWorkflowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Schedule Workflow</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="scheduleWfId" />
+          <div class="mb-2">
+            <label class="form-label">Schedule type</label>
+            <select id="scheduleType" class="form-select" onchange="toggleScheduleFields()">
+              <option value="once">Run once</option>
+              <option value="repeat">Repeat (minutes)</option>
+              <option value="weekly">Once a week</option>
+              <option value="monthly">Once a month</option>
+              <option value="yearly">Once a year</option>
+            </select>
+          </div>
+          <div class="mb-2" id="scheduleDateTimeGroup">
+            <label class="form-label">Start / run at</label>
+            <input id="scheduleDateTime" type="datetime-local" class="form-control" />
+          </div>
+          <div class="mb-2 d-none" id="scheduleIntervalGroup">
+            <label class="form-label">Repeat every (minutes)</label>
+            <input id="scheduleIntervalMinutes" type="number" class="form-control" value="60" min="1" />
+          </div>
+          <div id="scheduleList" class="mt-3"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" onclick="createSchedule()">Save Schedule</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+async function api(path, opts){ return fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts)); }
+
+async function createWorkflow(){
+  const modelValue = document.getElementById('wfModel').value;
+  const nextValue = document.getElementById('wfNext').value;
+  const body = {name: document.getElementById('wfName').value, systemInstruction: document.getElementById('wfSystem').value, userInstruction: document.getElementById('wfUser').value, modelId: modelValue || null, nextWorkflowId: nextValue || null};
+  const r = await api('/api/workflow', {method:'POST', body: JSON.stringify(body)});
+  if(!r.ok){ alert(await r.text()); return; }
+  const created = await r.json();
+  const toolIds = Array.from(document.querySelectorAll('#wfTools input[type="checkbox"]:checked')).map(i => i.value);
+  const bucketIds = Array.from(document.querySelectorAll('#wfBuckets input[type="checkbox"]:checked')).map(i => i.value);
+  if (toolIds.length) await api('/api/workflow/'+created.id+'/tools', {method:'POST', body: JSON.stringify(toolIds)});
+  if (bucketIds.length) await api('/api/workflow/'+created.id+'/ragbuckets', {method:'POST', body: JSON.stringify(bucketIds)});
+  const files = document.getElementById('wfFiles').files;
+  for (const f of files) {
+    const fd = new FormData();
+    fd.append('file', f);
+    const up = await fetch('/api/files/upload', {method:'POST', body: fd});
+    if(!up.ok){ alert(await up.text()); continue; }
+    const ud = await up.json();
+    await api('/api/workflow/'+created.id+'/files', {method:'POST', body: JSON.stringify(ud.fileId)});
+  }
+  document.getElementById('wfName').value = '';
+  document.getElementById('wfSystem').value = '';
+  document.getElementById('wfUser').value = '';
+  document.getElementById('wfFiles').value = '';
+  const modalEl = document.getElementById('createWorkflowModal');
+  const modal = bootstrap.Modal.getInstance(modalEl);
+  if (modal) modal.hide();
+  load();
+}
+
+async function editWorkflow(id){
+  const r = await api('/api/workflow/'+id);
+  if(!r.ok){ alert(await r.text()); return; }
+  const w = await r.json();
+  document.getElementById('editWfId').value = w.id;
+  document.getElementById('editWfHistoryLink').href = '/Workflow/History?id=' + w.id;
+  document.getElementById('editWfName').value = w.name || '';
+  document.getElementById('editWfSystem').value = w.systemInstruction || '';
+  document.getElementById('editWfUser').value = w.userInstruction || '';
+  document.getElementById('editWfModel').value = w.modelId || '';
+  document.getElementById('editWfNext').value = w.nextWorkflowId || '';
+  const currentFiles = Array.isArray(w.fileNames) ? w.fileNames : [];
+  document.getElementById('editWfCurrentFiles').textContent = currentFiles.length ? currentFiles.join(', ') : 'No attached files.';
+  document.getElementById('editWfFiles').value = '';
+  document.querySelectorAll('#editWfTools input[type="checkbox"]').forEach(cb => {
+    cb.checked = Array.isArray(w.tools) && w.tools.some(t => String(t).toLowerCase() === cb.value.toLowerCase());
+  });
+  document.querySelectorAll('#editWfBuckets input[type="checkbox"]').forEach(cb => {
+    cb.checked = Array.isArray(w.ragBuckets) && w.ragBuckets.some(b => String(b).toLowerCase() === cb.value.toLowerCase());
+  });
+  const modal = new bootstrap.Modal(document.getElementById('editWorkflowModal'));
+  modal.show();
+}
+
+async function updateWorkflow(){
+  const id = document.getElementById('editWfId').value;
+  const files = document.getElementById('editWfFiles').files;
+  const modelValue = document.getElementById('editWfModel').value;
+  const nextValue = document.getElementById('editWfNext').value;
+  const body = {
+    name: document.getElementById('editWfName').value,
+    systemInstruction: document.getElementById('editWfSystem').value,
+    userInstruction: document.getElementById('editWfUser').value,
+    modelId: modelValue || null,
+    nextWorkflowId: nextValue || null,
+    toolIds: Array.from(document.querySelectorAll('#editWfTools input[type="checkbox"]:checked')).map(i => i.value),
+    ragBucketIds: Array.from(document.querySelectorAll('#editWfBuckets input[type="checkbox"]:checked')).map(i => i.value)
+  };
+  if (files.length) {
+    const fileIds = [];
+    for (const f of files) {
+      const fd = new FormData();
+      fd.append('file', f);
+      const up = await fetch('/api/files/upload', {method:'POST', body: fd});
+      if(!up.ok){ alert(await up.text()); continue; }
+      const ud = await up.json();
+      fileIds.push(ud.fileId);
+    }
+    body.fileIds = fileIds;
+  }
+  const r = await api('/api/workflow/'+id, {method:'PUT', body: JSON.stringify(body)});
+  if(!r.ok){ alert(await r.text()); return; }
+  const modalEl = document.getElementById('editWorkflowModal');
+  const modal = bootstrap.Modal.getInstance(modalEl);
+  if (modal) modal.hide();
+  load();
+}
+
+async function loadShareUsers() {
+  const r = await api('/api/users');
+  if (!r.ok) return [];
+  return await r.json();
+}
+
+async function loadShares(id) {
+  const r = await api('/api/workflow/' + id + '/shares');
+  if (!r.ok) return [];
+  return await r.json();
+}
+
+async function openShare(id) {
+  document.getElementById('shareWfId').value = id;
+  const users = await loadShareUsers();
+  const select = document.getElementById('shareUserSelect');
+  select.innerHTML = '';
+  for (const u of users) {
+    const option = document.createElement('option');
+    option.value = u.id;
+    option.textContent = (u.fullName && u.fullName !== u.username) ? u.fullName + ' (' + u.username + ')' : u.username;
+    select.appendChild(option);
+  }
+  await renderShares(id);
+  const modal = new bootstrap.Modal(document.getElementById('shareWorkflowModal'));
+  modal.show();
+}
+
+async function renderShares(id) {
+  const shares = await loadShares(id);
+  const container = document.getElementById('shareList');
+  if (!shares.length) {
+    container.innerHTML = '<div class="text-muted small fst-italic">Not shared with anyone yet.</div>';
+    return;
+  }
+  let html = '<table class="table table-sm"><thead><tr><th>User</th><th>Permission</th><th></th></tr></thead><tbody>';
+  for (const s of shares) {
+    html += '<tr><td>' + (s.fullName || s.userName) + '</td><td>' + s.permission + '</td><td><button class="btn btn-sm btn-danger" type="button" onclick="revokeShare(\'' + id + '\',\'' + s.id + '\')">Revoke</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function shareWorkflow() {
+  const id = document.getElementById('shareWfId').value;
+  const userId = document.getElementById('shareUserSelect').value;
+  const r = await api('/api/workflow/' + id + '/shares', { method: 'POST', body: JSON.stringify({ userId }) });
+  if (!r.ok) { alert(await r.text()); return; }
+  await renderShares(id);
+}
+
+async function revokeShare(id, shareId) {
+  const r = await api('/api/workflow/' + id + '/shares/' + shareId, { method: 'DELETE' });
+  if (!r.ok) { alert(await r.text()); return; }
+  await renderShares(id);
+}
+
+function toggleScheduleFields() {
+  const type = document.getElementById('scheduleType').value;
+  const intervalGroup = document.getElementById('scheduleIntervalGroup');
+  if (type === 'repeat') intervalGroup.classList.remove('d-none');
+  else intervalGroup.classList.add('d-none');
+}
+
+async function loadSchedules(id) {
+  const r = await api('/api/workflow/' + id + '/schedules');
+  if (!r.ok) return [];
+  return await r.json();
+}
+
+async function renderSchedules(id) {
+  const schedules = await loadSchedules(id);
+  const container = document.getElementById('scheduleList');
+  if (!schedules.length) {
+    container.innerHTML = '<div class="text-muted small fst-italic">No schedules yet.</div>';
+    return;
+  }
+  let html = '<table class="table table-sm"><thead><tr><th>Next run</th><th>Interval (min)</th><th></th></tr></thead><tbody>';
+  for (const s of schedules) {
+    const enabled = s.enabled ? 'Enabled' : 'Disabled';
+    html += '<tr><td>' + (s.nextRunAt || s.runAt || '-') + ' (' + enabled + ')</td><td>' + (s.intervalMinutes || '-') + '</td><td><button class="btn btn-sm btn-danger" type="button" onclick="deleteSchedule(\'' + id + '\',\'' + s.id + '\')">Delete</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function openSchedule(id) {
+  document.getElementById('scheduleWfId').value = id;
+  toggleScheduleFields();
+  document.getElementById('scheduleDateTime').value = '';
+  await renderSchedules(id);
+  const modal = new bootstrap.Modal(document.getElementById('scheduleWorkflowModal'));
+  modal.show();
+}
+
+async function createSchedule() {
+  const id = document.getElementById('scheduleWfId').value;
+  const type = document.getElementById('scheduleType').value;
+  const dateTimeValue = document.getElementById('scheduleDateTime').value;
+  const runAt = dateTimeValue ? new Date(dateTimeValue).toISOString() : null;
+  let intervalMinutes = null;
+  if (type === 'repeat') {
+    intervalMinutes = Number(document.getElementById('scheduleIntervalMinutes').value || 60);
+  } else if (type === 'weekly') {
+    intervalMinutes = 10080;
+  } else if (type === 'monthly') {
+    intervalMinutes = 43200;
+  } else if (type === 'yearly') {
+    intervalMinutes = 525600;
+  }
+
+  const body = intervalMinutes === null
+    ? { runAt }
+    : { runAt, intervalMinutes };
+
+  const r = await api('/api/workflow/' + id + '/schedule', { method: 'POST', body: JSON.stringify(body) });
+  if (!r.ok) { alert(await r.text()); return; }
+  await renderSchedules(id);
+}
+
+async function deleteSchedule(workflowId, scheduleId) {
+  const r = await api('/api/workflow/schedules/' + scheduleId, { method: 'DELETE' });
+  if (!r.ok) { alert(await r.text()); return; }
+  await renderSchedules(workflowId);
+}
+
+function showStartedModal(message) {
+  let element = document.getElementById('runStartedModal');
+  if (!element) {
+    element = document.createElement('div');
+    element.id = 'runStartedModal';
+    element.className = 'modal fade';
+    element.tabIndex = -1;
+    element.innerHTML = '<div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Workflow status</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button></div></div></div>';
+    document.body.appendChild(element);
+  }
+  element.querySelector('.modal-body').textContent = message;
+  const modal = new bootstrap.Modal(element);
+  modal.show();
+}
+
+async function runNow(id, button){
+  if (button) {
+    button.disabled = true;
+    button.dataset.originalText = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Starting...';
+  }
+  let runId = null;
+  try {
+    const r = await api('/api/workflow/'+id+'/run', {method:'POST'});
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    runId = d.runId;
+    if (button) {
+      button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+      button.classList.remove('btn-primary');
+      button.classList.add('btn-secondary');
+    }
+    showStartedModal('Workflow started. Run queued: ' + runId);
+  } catch (error) {
+    showStartedModal('Could not start workflow: ' + (error && error.message ? error.message : error));
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = button.dataset.originalText || 'Run';
+      button.classList.remove('btn-secondary');
+      button.classList.add('btn-primary');
+    }
+    return;
+  }
+  load();
+  setTimeout(() => {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = button.dataset.originalText || 'Run';
+      button.classList.remove('btn-secondary');
+      button.classList.add('btn-primary');
+    }
+  }, 3000);
+}
+
+async function load(){
+  const r = await api('/api/workflow');
+  const data = await r.json();
+  const byId = new Map(data.map(w => [w.id, w]));
+  const parentOf = {};
+  for (const w of data) {
+    if (w.nextWorkflowId) parentOf[w.nextWorkflowId] = w.id;
+  }
+  const isDependent = w => !!parentOf[w.id];
+
+  function chainFor(root) {
+    const steps = [root];
+    let current = root;
+    while (current.nextWorkflowId && byId.has(current.nextWorkflowId)) {
+      const next = byId.get(current.nextWorkflowId);
+      if (steps.includes(next)) break;
+      steps.push(next);
+      current = next;
+    }
+    return steps;
+  }
+
+  const roots = data.filter(w => !parentOf[w.id]);
+  let html = '<table class="table align-middle"><thead><tr><th>Workflow</th><th>Tools</th><th>Attached Files</th><th>Runs</th><th>Actions</th></tr></thead><tbody>';
+
+  for (const root of roots) {
+    const chain = chainFor(root);
+    let actionButtons = '';
+    if (root.isOwner) {
+      actionButtons += '<button class="btn btn-sm btn-outline-primary me-1" onclick="editWorkflow(\'' + root.id + '\')">Edit</button>';
+      actionButtons += '<button class="btn btn-sm btn-outline-success border border-success me-1" onclick="openShare(\'' + root.id + '\')">Share</button>';
+      actionButtons += '<button class="btn btn-sm btn-outline-warning border border-warning me-1" onclick="openSchedule(\'' + root.id + '\')">Schedule</button>';
+    }
+    actionButtons += '<a class="btn btn-sm btn-outline-info border border-info me-1" href="/Workflow/History?id=' + root.id + '">History</a>';
+    actionButtons += '<button class="btn btn-sm btn-primary" onclick="runNow(\'' + root.id + '\', this)">Run</button>';
+
+    const names = (root.fileNames || []).join(', ') || '-';
+    html += '<tr>';
+    html += '<td>';
+    if (chain.length > 1) {
+      html += '<button type="button" class="btn btn-sm btn-link p-0 me-2 align-baseline" onclick="toggleChain(\'' + root.id + '\')" id="toggle-' + root.id + '">▶</button>';
+      html += '<span class="badge text-bg-primary me-2">Chain</span>';
+    }
+    html += '<strong>' + htmlSafe(root.name) + '</strong>';
+    if (chain.length > 1) html += ' <span class="text-muted small">(' + chain.length + ' steps)</span>';
+    html += '</td>';
+    html += '<td>' + (root.toolCount || 0) + '</td>';
+    html += '<td>' + htmlSafe(names) + '</td>';
+    html += '<td>' + (root.runCount || 0) + '</td>';
+    html += '<td>' + actionButtons + '</td>';
+    html += '</tr>';
+
+    if (chain.length > 1) {
+      html += '<tr id="chain-' + root.id + '" style="display:none;">';
+      html += '<td colspan="5" class="p-0 border-0">';
+      html += '<div class="p-3 ms-4 border-start border-3 border-primary bg-light rounded">';
+      html += '<table class="table table-sm table-borderless mb-0">';
+      html += '<thead><tr><th style="width:70px;">Step</th><th>Dependent workflow</th><th>Tools</th><th>Runs</th><th>Actions</th></tr></thead><tbody>';
+      chain.forEach((w, index) => {
+        if (index === 0) return;
+        const childNames = (w.fileNames || []).join(', ') || '-';
+        let childActions = '';
+        if (w.isOwner) childActions += '<button class="btn btn-sm btn-outline-primary me-1" onclick="editWorkflow(\'' + w.id + '\')">Edit</button>';
+        childActions += '<a class="btn btn-sm btn-outline-info border border-info me-1" href="/Workflow/History?id=' + w.id + '">History</a>';
+        html += '<tr>';
+        html += '<td><span class="badge text-bg-secondary">Step ' + (index + 1) + '</span></td>';
+        html += '<td>' + htmlSafe(w.name) + '</td>';
+        html += '<td>' + (w.toolCount || 0) + '</td>';
+        html += '<td>' + (w.runCount || 0) + '</td>';
+        html += '<td>' + childActions + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '</div>';
+      html += '</td></tr>';
+    }
+  }
+  html += '</tbody></table>';
+  document.getElementById('list').innerHTML = html;
+}
+
+function toggleChain(id) {
+  const row = document.getElementById('chain-' + id);
+  const toggle = document.getElementById('toggle-' + id);
+  if (!row) return;
+  if (row.style.display === 'none') {
+    row.style.display = '';
+    if (toggle) toggle.textContent = '▼';
+  } else {
+    row.style.display = 'none';
+    if (toggle) toggle.textContent = '▶';
+  }
+}
+function htmlSafe(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+load();
+</script>
+
+

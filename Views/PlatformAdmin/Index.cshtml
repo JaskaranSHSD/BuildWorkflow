@@ -1,0 +1,49 @@
+@model List<BuildWorkflow.Models.Organization>
+@{
+    ViewData["Title"] = "Organizations";
+    var counts = ViewBag.UserCounts as Dictionary<Guid,int> ?? new Dictionary<Guid,int>();
+}
+<h2 class="mb-3">Organizations</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <form asp-controller="PlatformAdmin" asp-action="CreateOrganization" method="post" class="row g-2">
+            @Html.AntiForgeryToken()
+            <div class="col-md-4">
+                <input name="name" class="form-control" placeholder="Organization name" required />
+            </div>
+            <div class="col-md-4">
+                <input name="slug" class="form-control" placeholder="Slug (optional)" />
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary">Create Organization</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Slug</th>
+            <th>Users</th>
+            <th>Active</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var org in Model)
+        {
+            <tr>
+                <td>@org.Name</td>
+                <td>@org.Slug</td>
+                <td>@(counts.TryGetValue(org.Id, out var c) ? c : 0)</td>
+                <td>@org.IsActive</td>
+                <td>
+                    <a class="btn btn-sm btn-outline-primary" asp-controller="PlatformAdmin" asp-action="ManageOrganization" asp-route-id="@org.Id">Manage</a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

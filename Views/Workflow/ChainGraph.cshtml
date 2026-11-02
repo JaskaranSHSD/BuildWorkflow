@@ -1,0 +1,175 @@
+@{
+    ViewData["Title"] = "Workflow Chain Graph";
+    var runId = ViewBag.RunId as string;
+    var workflowId = ViewBag.WorkflowId as string;
+}
+<style>
+    .chain-graph { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1.5rem; background: #f8f9fa; border-radius: 1rem; }
+    .chain-node { width: 150px; min-height: 150px; border-radius: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border: 3px solid #dee2e6; background: #fff; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; padding: .75rem; }
+    .chain-node:hover { transform: translateY(-4px); box-shadow: 0 .5rem 1rem rgba(0,0,0,.12); }
+    .chain-node.active { border-color: #0d6efd; background: #e7f1ff; }
+    .chain-node.completed { border-color: #198754; }
+    .chain-node.failed { border-color: #dc3545; background: #fdecea; }
+    .chain-node.notrun { border-style: dashed; color: #6c757d; }
+    .chain-connector { flex: 0 0 48px; height: 4px; background: linear-gradient(90deg,#adb5bd,#6c757d); border-radius: 999px; position: relative; }
+    .chain-connector::after { content: '▶'; position: absolute; right: -10px; top: -11px; color: #6c757d; font-size: .9rem; }
+    .node-title { font-weight: 700; font-size: .85rem; }
+    .node-sub { font-size: .72rem; color: #6c757d; }
+</style>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2>Workflow Chain Graph</h2>
+            <p class="text-muted small mb-0">Click a node to inspect step details and run output.</p>
+        </div>
+        <a href="/Workflow" class="btn btn-secondary btn-sm">Back to Workflows</a>
+    </div>
+    <div id="graph" class="chain-graph mb-3"></div>
+    <div id="details" class="text-muted small"></div>
+</div>
+
+<div class="modal fade" id="nodeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="nodeModalTitle">Step details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="nodeModalBody"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const selectedRunId = '@runId';
+const selectedWorkflowId = '@workflowId';
+let chainData = [];
+let runByWorkflow = new Map();
+let modal;
+
+async function api(path) {
+    const response = await fetch(path);
+    if (!response.ok) throw new Error(await response.text());
+    return response;
+}
+function htmlEscape(value) {
+    return String(value ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function formatDate(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return htmlEscape(value);
+    return date.toLocaleString();
+}
+
+async function loadGraph() {
+    try {
+        const workflowsResponse = await api('/api/workflow');
+        const workflows = await workflowsResponse.json();
+        const byId = new Map((Array.isArray(workflows) ? workflows : []).map(w => [w.id, w]));
+        const parentOf = {};
+        for (const w of (Array.isArray(workflows) ? workflows : [])) {
+            if (w.nextWorkflowId) parentOf[w.nextWorkflowId] = w.id;
+        }
+
+        let rootId = selectedWorkflowId;
+        while (parentOf[rootId]) rootId = parentOf[rootId];
+
+        chainData = [];
+        const visited = new Set();
+        let currentId = rootId;
+        while (currentId && byId.has(currentId) && !visited.has(currentId)) {
+            visited.add(currentId);
+            chainData.push(byId.get(currentId));
+            currentId = byId.get(currentId).nextWorkflowId;
+        }
+
+        let runs = [];
+        for (const workflow of chainData) {
+            const response = await api('/api/workflow/' + workflow.id + '/runs?page=1&pageSize=50');
+            const pageRuns = await response.json();
+            if (Array.isArray(pageRuns)) {
+                pageRuns.forEach(run => {
+                    run.workflowId = workflow.id;
+                    run.workflowName = workflow.name;
+                });
+                runs.push(...pageRuns);
+            }
+        }
+
+        const runById = new Map(runs.map(run => [String(run.id), run]));
+        function findRoot(run, seen = new Set()) {
+            let current = run;
+            while (current && current.parentRunId && runById.has(String(current.parentRunId)) && !seen.has(String(current.id))) {
+                seen.add(String(current.id));
+                current = runById.get(String(current.parentRunId));
+            }
+            return current;
+        }
+        const selectedRun = runById.get(String(selectedRunId));
+        const rootRun = selectedRun ? findRoot(selectedRun) : runs[0];
+        const groupRuns = runs.filter(run => rootRun && findRoot(run).id === rootRun.id);
+        runByWorkflow = new Map(groupRuns.map(run => [String(run.workflowId), run]));
+
+        let graphHtml = '';
+        for (let index = 0; index < chainData.length; index++) {
+            const workflow = chainData[index];
+            const run = runByWorkflow.get(String(workflow.id));
+            const status = (run?.status || 'Not run').toLowerCase();
+            const classes = ['chain-node'];
+            if (run && String(run.id) === String(selectedRunId)) classes.push('active');
+            if (status === 'completed') classes.push('completed');
+            if (status === 'failed') classes.push('failed');
+            if (!run) classes.push('notrun');
+            graphHtml += '<div class="' + classes.join(' ') + '" data-step="' + index + '" onclick="showNodeDetails(' + index + ')">';
+            graphHtml += '<div class="node-title">Step ' + (index + 1) + '</div>';
+            graphHtml += '<div class="node-sub">' + htmlEscape(workflow.name || 'Workflow') + '</div>';
+            graphHtml += '<div class="node-sub mt-2">' + htmlEscape(run?.status || 'Not run') + '</div>';
+            if (run) graphHtml += '<div class="node-sub">' + htmlEscape(String(run.id).substring(0, 8)) + '</div>';
+            graphHtml += '</div>';
+            if (index < chainData.length - 1) graphHtml += '<div class="chain-connector"></div>';
+        }
+        document.getElementById('graph').innerHTML = graphHtml || '<div class="text-muted">No chain data.</div>';
+        document.getElementById('details').textContent = chainData.length ? 'Click any node for full run details.' : '';
+
+        modal = new bootstrap.Modal(document.getElementById('nodeModal'));
+    } catch (error) {
+        document.getElementById('graph').innerHTML = '<div class="alert alert-danger">Graph failed: ' + htmlEscape(error.message) + '</div>';
+    }
+}
+
+async function showNodeDetails(index) {
+    const workflow = chainData[index];
+    const run = runByWorkflow.get(String(workflow.id));
+    document.getElementById('nodeModalTitle').textContent = 'Step ' + (index + 1) + ': ' + (workflow.name || 'Workflow');
+    let body = '';
+    body += '<div class="mb-2"><b>Status:</b> ' + htmlEscape(run?.status || 'Not run') + '</div>';
+    body += '<div class="mb-2"><b>Workflow instruction:</b><br><span class="text-muted">' + htmlEscape(workflow.userInstruction || '-') + '</span></div>';
+    if (run) {
+        body += '<div class="mb-2"><b>Run ID:</b> ' + htmlEscape(run.id) + '</div>';
+        body += '<div class="mb-2"><b>Model:</b> ' + htmlEscape(run.modelId || 'default') + '</div>';
+        body += '<div class="mb-2"><b>Created:</b> ' + formatDate(run.createdAt) + '</div>';
+        body += '<div class="mb-2"><b>Started:</b> ' + formatDate(run.startedAt) + '</div>';
+        body += '<div class="mb-2"><b>Completed:</b> ' + formatDate(run.completedAt) + '</div>';
+        body += '<div class="mb-2"><b>Session:</b> ' + htmlEscape(run.sessionId || '-') + '</div>';
+        try {
+            const response = await api('/api/workflow/runs/' + run.id + '/messages');
+            const messages = await response.json();
+            if (Array.isArray(messages) && messages.length > 0) {
+                body += '<hr><div class="fw-semibold mb-2">Messages</div>';
+                for (const message of messages) {
+                    body += '<div class="border rounded p-2 mb-2"><b>' + htmlEscape(message.role || 'assistant') + '</b>: ' + htmlEscape(message.content || '') + '</div>';
+                }
+            }
+        } catch (error) {
+            body += '<div class="alert alert-warning small">Could not load messages.</div>';
+        }
+    } else {
+        body += '<div class="text-muted">This step has not been run in this execution.</div>';
+    }
+    document.getElementById('nodeModalBody').innerHTML = body;
+    modal.show();
+}
+
+document.addEventListener('DOMContentLoaded', loadGraph);
+</script>

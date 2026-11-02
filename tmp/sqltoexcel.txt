@@ -1,0 +1,49 @@
+    private AITool CreateSqlToExcelTool(ToolDefinition tool)
+    {
+        return AIFunctionFactory.Create(
+            async (string input) =>
+            {
+                if (string.IsNullOrWhiteSpace(tool.SqlConfiguration?.ConnectionString))
+                {
+                    return "No SQL configuration is available for this tool.";
+                }
+
+                var trimmed = (input ?? string.Empty).Trim();
+                var query = trimmed;
+                var outputPath = string.Empty;
+
+                var separatorIndex = trimmed.LastIndexOf("::");
+                if (separatorIndex > 0)
+                {
+                    query = trimmed[..separatorIndex].Trim();
+                    outputPath = trimmed[(separatorIndex + 2)..].Trim();
+                }
+
+                if (string.IsNullOrWhiteSpace(query))
+                {
+                    return "Usage: <SQL query> or <SQL query>::outputPath";
+                }
+
+                if (string.IsNullOrWhiteSpace(outputPath))
+                {
+                    var folder = Path.Combine(_environment.ContentRootPath, "TempFilesLocal", "exports");
+                    Directory.CreateDirectory(folder);
+                    outputPath = Path.Combine(folder, $"query_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.xlsx");
+                }
+
+                try
+                {
+                    var table = await Helpers.SqlDatabaseReader.ExecuteReadOnlyQueryToTableAsync(tool.SqlConfiguration!.ConnectionString, tool.SqlConfiguration.DatabaseType, query);
+                    var rows = table.Rows.Cast<DataRow>().Select(row => row.ItemArray.Select(value => value == DBNull.Value ? null : value).Cast<object?>());
+                    Helpers.ExcelHelper.WriteWorkbook(outputPath, new[] { ("Query Results", rows) });
+                    return $"Excel file generated: {outputPath} ({table.Rows.Count} rows).";
+                }
+                catch (Exception ex)
+                {
+                    return $"Could not generate Excel file: {ex.Message}";
+                }
+            },
+            name: SanitizeName(tool.Name),
+            description: string.IsNullOrWhiteSpace(tool.Description) ? "Run a read-only SQL query and generate an Excel file." : tool.Description);
+    }
+

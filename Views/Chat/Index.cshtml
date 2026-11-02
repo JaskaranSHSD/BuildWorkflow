@@ -1,0 +1,467 @@
+@{
+    ViewData["Title"] = "Chat";
+    var chatModels = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
+    var defaultModel = chatModels.FirstOrDefault();
+    var ragBuckets = ViewBag.RagBuckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+    var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
+}
+<style>
+    .tool-group-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .tool-group {
+        background: #ffffff;
+        border: 1px solid #e6e8eb;
+        border-radius: 18px;
+        box-shadow: 0 1px 3px rgba(60, 64, 67, 0.08);
+        padding: 0.75rem;
+    }
+    .tool-group-summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        padding: 0.15rem 0.1rem;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #202124;
+    }
+    .tool-group-summary::-webkit-details-marker {
+        display: none;
+    }
+    .tool-group-summary::before {
+        content: "›";
+        margin-right: 0.55rem;
+        color: #5f6368;
+        font-size: 1.25rem;
+        line-height: 1;
+        transition: transform 0.2s ease;
+    }
+    .tool-group[open] .tool-group-summary::before {
+        transform: rotate(90deg);
+    }
+    .tool-group-name {
+        letter-spacing: 0.01em;
+    }
+    .tool-group-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.6rem;
+        height: 1.6rem;
+        padding: 0 0.45rem;
+        border-radius: 999px;
+        background: #f1f3f4;
+        color: #5f6368;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .selection-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 0.55rem;
+        margin-top: 0.65rem;
+    }
+    .selection-tile {
+        position: relative;
+    }
+    .selection-tile-input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+    .selection-tile-label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        min-height: 2.1rem;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid #dadce0;
+        border-radius: 999px;
+        background: #f1f3f4;
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: #5f6368;
+        transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+    }
+    .selection-tile-label:hover {
+        background: #e8eaed;
+        transform: translateY(-1px);
+    }
+    .selection-tile-input:checked + .selection-tile-label {
+        border-color: #1e8e3e;
+        background: #e6f4ea;
+        color: #137333;
+        box-shadow: 0 1px 2px rgba(26, 115, 232, 0.12);
+    }
+    .selection-tile-input:focus-visible + .selection-tile-label {
+        outline: 2px solid #1a73e8;
+        outline-offset: 2px;
+    }
+    .selection-tile-input:disabled + .selection-tile-label {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+    }
+    .selection-tile-name {
+        line-height: 1.2;
+        word-break: break-word;
+    }
+    .selection-tile-check {
+        display: none;
+    }
+</style>
+<div class="chatgpt-shell">
+    <aside class="chatgpt-sidebar">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Chats</h5>
+            <button id="new-chat" class="btn btn-sm btn-outline-secondary" type="button">New</button>
+        </div>
+        <ul id="chat-history" class="list-group list-group-flush flex-grow-1 overflow-auto"></ul>
+    </aside>
+
+    <main class="chatgpt-main">
+        <div id="chat-log" class="chatgpt-log"></div>
+        <div class="chatgpt-composer">
+            <small id="file-status" class="text-muted d-block mb-2"></small>
+            <div class="d-flex flex-wrap gap-2 align-items-center border rounded p-2 mb-2">
+                <input id="chat-input" type="text" class="form-control border-0 shadow-none" placeholder="Message BuildWorkflow..." />
+                <input id="file-input" type="file" class="form-control" style="max-width: 220px;" />
+            <input id="image-input" type="file" accept="image/*" class="form-control" style="max-width: 220px; display:none;" />
+        @if (chatModels.Count >= 1)
+        {
+            <select id="modelSelect" class="form-select form-select-sm" style="max-width: 200px;" title="Model">
+                @foreach (var m in chatModels)
+                {
+                    <option value="@m.Id" data-supports-tools="@m.SupportsTools.ToString().ToLowerInvariant()" data-supports-images="@m.SupportsImages.ToString().ToLowerInvariant()">@m.Name</option>
+                }
+            </select>
+        }
+        else if (defaultModel != null)
+        {
+            <input type="hidden" id="modelSelect" value="@defaultModel.Id" data-supports-tools="@defaultModel.SupportsTools.ToString().ToLowerInvariant()" data-supports-images="@defaultModel.SupportsImages.ToString().ToLowerInvariant()" />
+        }
+                <button id="chat-send" class="btn btn-primary" type="button">Send</button>
+                <span id="chat-progress" class="spinner-border spinner-border-sm text-primary ms-2" style="display:none;" aria-hidden="true"></span>
+                <span id="chat-progress-text" class="small text-muted ms-2" style="display:none;">Workingâ€¦</span>
+            </div>
+        </div>
+    </main>
+
+    <aside class="chatgpt-right">
+        <h5 class="mb-2">Selection</h5>
+        <div class="mb-3">
+            <div class="fw-semibold small mb-2">Tools</div>
+            @{
+                var toolGroups = tools
+                    .GroupBy(t => string.IsNullOrWhiteSpace(t.ToolGroup?.Name) ? "General" : t.ToolGroup!.Name)
+                    .OrderBy(g => g.Key);
+            }
+            <div class="tool-group-tree">
+                @foreach (var group in toolGroups)
+                {
+                    <details class="tool-group" open>
+                        <summary class="tool-group-summary">
+                            <span class="tool-group-name">@group.Key</span>
+                            <span class="tool-group-count">@group.Count()</span>
+                        </summary>
+                        <div class="selection-grid mt-2">
+                            @foreach (var t in group)
+                            {
+                                <div class="selection-tile">
+                                    <input class="selection-tile-input chat-tool" type="checkbox" value="@t.Id" id="chat-tool-@t.Id" checked />
+                                    <label class="selection-tile-label" for="chat-tool-@t.Id">
+                                        <span class="selection-tile-check" aria-hidden="true"></span>
+                                        <span class="selection-tile-name">@t.Name</span>
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        </div>
+        <div>
+            <div class="fw-semibold small mb-2">Knowledge</div>
+            @{
+                var knowledgeGroups = ragBuckets
+                    .GroupBy(b => string.IsNullOrWhiteSpace(b.KnowledgeGroup?.Name) ? "General" : b.KnowledgeGroup!.Name)
+                    .OrderBy(g => g.Key);
+            }
+            <div class="tool-group-tree">
+                @foreach (var group in knowledgeGroups)
+                {
+                    <details class="tool-group" open>
+                        <summary class="tool-group-summary">
+                            <span class="tool-group-name">@group.Key</span>
+                            <span class="tool-group-count">@group.Count()</span>
+                        </summary>
+                        <div class="selection-grid mt-2">
+                            @foreach (var b in group)
+                            {
+                                <div class="selection-tile">
+                                    <input class="selection-tile-input chat-knowledge" type="checkbox" value="@b.Id" id="chat-knowledge-@b.Id" checked />
+                                    <label class="selection-tile-label" for="chat-knowledge-@b.Id">
+                                        <span class="selection-tile-check" aria-hidden="true"></span>
+                                        <span class="selection-tile-name">@b.Name</span>
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        </div>
+    </aside>
+
+</div>
+
+@section Scripts {
+<script>
+    const log = document.getElementById('chat-log');
+    const input = document.getElementById('chat-input');
+    const send = document.getElementById('chat-send');
+    const modelSelect = document.getElementById('modelSelect');
+    const fileInput = document.getElementById('file-input');
+    const imageInput = document.getElementById('image-input');
+    const fileStatus = document.getElementById('file-status');
+    const historyList = document.getElementById('chat-history');
+        const uploadSessionKey = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+    let currentSessionId = null;
+
+    function append(role, text, attachedFileIds) {
+        const div = document.createElement('div');
+        div.className = 'chat-message ' + (role === 'Assistant' ? 'assistant' : 'user');
+        const meta = document.createElement('div');
+        meta.className = 'chat-message-meta';
+        meta.textContent = role;
+        const body = document.createElement('div');
+        body.className = 'chat-message-body';
+        const tokenPattern = /file:[0-9a-fA-F-]{36}/g;
+        let lastIndex = 0;
+        function renderInlineMarkdown(content) {
+            const escaped = String(content)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            const rendered = escaped
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\n/g, '<br>');
+            const span = document.createElement('span');
+            span.innerHTML = rendered;
+            body.appendChild(span);
+        }
+        for (const match of text.matchAll(tokenPattern)) {
+            if (match.index > lastIndex) {
+                renderInlineMarkdown(text.slice(lastIndex, match.index));
+            }
+            const fileId = match[0].slice(5);
+            const link = document.createElement('a');
+            link.href = '/api/files/' + fileId + '/download';
+            link.textContent = 'Download generated file';
+            link.className = 'd-block mt-1';
+            body.appendChild(link);
+            lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < text.length) {
+            renderInlineMarkdown(text.slice(lastIndex));
+        }
+        if (attachedFileIds && Array.isArray(attachedFileIds) && attachedFileIds.length) {
+            attachedFileIds.forEach(id => {
+                const link = document.createElement('a');
+                link.href = '/api/files/' + id + '/download';
+                link.textContent = 'Download attached file';
+                link.className = 'd-block mt-1';
+                body.appendChild(link);
+            });
+        }
+        div.appendChild(meta);
+        div.appendChild(body);
+        log.appendChild(div);
+        requestAnimationFrame(() => {
+            log.scrollTop = log.scrollHeight;
+        });
+    }
+
+    function labelForRole(role) {
+        return role === 'assistant' ? 'Assistant' : 'You';
+    }
+
+    async function loadSessions() {
+        try {
+            const res = await fetch('/api/chat/sessions?page=1&pageSize=10');
+            if (!res.ok) return;
+            const sessions = await res.json();
+            historyList.innerHTML = '';
+            sessions.forEach(s => {
+                const item = document.createElement('li');
+                item.className = 'list-group-item list-group-item-action border-0 rounded mb-1';
+                item.textContent = s.title || 'New chat';
+                item.addEventListener('click', () => loadSession(s.id));
+                if (currentSessionId && s.id === currentSessionId) {
+                    item.classList.add('active');
+                }
+                historyList.appendChild(item);
+            });
+        } catch (err) {
+            console.log(err);
+        }
+    }
+
+    async function loadSession(id) {
+        currentSessionId = id;
+        log.innerHTML = '';
+        try {
+            const res = await fetch('/api/chat/sessions/' + id + '/messages');
+            if (!res.ok) {
+                let error = 'This chat has reached its message limit. Please start a new chat.';
+                try { const data = await res.json(); if (data.error) error = data.error; } catch { }
+                currentSessionId = null;
+                append('Error', error);
+                return;
+            }
+            const messages = await res.json();
+            messages.forEach(m => { const ids = m.attachedFileIds ? String(m.attachedFileIds).split(",").map(x => x.trim()).filter(Boolean) : []; append(labelForRole(m.role), m.content, ids); });
+            requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+        } catch (err) {
+            console.log(err);
+        }
+        await loadSessions();
+    }
+
+    async function sendChatMessage(message, attachedFileIds) {
+        if (!message && !(attachedFileIds && attachedFileIds.length)) return;
+        append('You', message || 'Sent attached file(s).', attachedFileIds || []);
+        send.disabled = true;
+        input.disabled = true;
+        const progress = document.getElementById('chat-progress');
+        const progressText = document.getElementById('chat-progress-text');
+        if (progress) progress.style.display = 'inline-block';
+        if (progressText) progressText.style.display = 'inline';
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000);
+        let res;
+        try {
+            res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({ message: message || 'Please use the attached file(s).', modelId: modelSelect ? modelSelect.value : null, attachedFileIds, sessionId: currentSessionId, ragBucketId: null, selectedToolIds: Array.from(document.querySelectorAll('.chat-tool:checked')).map(cb => cb.value), selectedRagBucketIds: Array.from(document.querySelectorAll('.chat-knowledge:checked')).map(cb => cb.value) })
+            });
+            const data = await res.json();
+            if (!res.ok) append('Error', data.error ?? 'Request failed');
+            else {
+                append('Assistant', data.reply ?? '');
+                if (data.sessionId) {
+                    currentSessionId = data.sessionId;
+                    await loadSessions();
+                }
+            }
+        } catch (err) {
+            if (err && err.name === 'AbortError') {
+                append('Error', 'Request timed out after 3 minutes. Try a smaller file or prompt.');
+            } else {
+                append('Error', String(err));
+            }
+        } finally {
+            clearTimeout(timeoutId);
+            send.disabled = false;
+            input.disabled = false;
+            const progress = document.getElementById('chat-progress');
+            const progressText = document.getElementById('chat-progress-text');
+            if (progress) progress.style.display = 'none';
+            if (progressText) progressText.style.display = 'none';
+            input.focus();
+        }
+    }
+
+    function selectedModelCapabilities() {
+        if (!modelSelect) return { supportsTools: true, supportsImages: false };
+        let element = modelSelect;
+        let option = null;
+        if (element.tagName === 'SELECT') option = element.options[element.selectedIndex];
+        const data = option ? option.dataset : element.dataset;
+        return {
+            supportsTools: (data.supportsTools || 'true') === 'true',
+            supportsImages: (data.supportsImages || 'false') === 'true'
+        };
+    }
+
+    function applyModelCapabilities() {
+        const caps = selectedModelCapabilities();
+        document.querySelectorAll('.chat-tool').forEach(cb => {
+            cb.disabled = !caps.supportsTools;
+            cb.checked = caps.supportsTools;
+        });
+        if (imageInput) {
+            imageInput.style.display = caps.supportsImages ? '' : 'none';
+            if (!caps.supportsImages) imageInput.value = '';
+        }
+    }
+
+    async function uploadOne(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('sessionKey', uploadSessionKey);
+        const res = await fetch('/api/files/upload', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? 'Upload failed.');
+        return data;
+    }
+
+    async function sendMessage() {
+        const message = input.value.trim();
+        const files = [];
+        if (fileInput.files && fileInput.files[0]) files.push(fileInput.files[0]);
+        if (imageInput && imageInput.files && imageInput.files[0]) files.push(imageInput.files[0]);
+        let ids = [];
+
+        if (files.length) {
+            fileStatus.textContent = 'Uploading...';
+            try {
+                for (const file of files) {
+                    const data = await uploadOne(file);
+                    ids.push(data.fileId);
+                }
+                fileStatus.textContent = 'Attached: ' + files.map(f => f.name).join(', ');
+                if (fileInput) fileInput.value = '';
+                if (imageInput) imageInput.value = '';
+            } catch (err) {
+                fileStatus.textContent = String(err);
+                return;
+            }
+        }
+
+        if (!message && !ids.length) return;
+        input.value = '';
+        await sendChatMessage(message, ids);
+    }
+
+    document.getElementById('new-chat').addEventListener('click', () => {
+        currentSessionId = null;
+        log.innerHTML = '';
+        input.focus();
+        loadSessions();
+    });
+
+    if (modelSelect && modelSelect.tagName === 'SELECT') {
+        modelSelect.addEventListener('change', applyModelCapabilities);
+    }
+    applyModelCapabilities();
+    send.addEventListener('click', sendMessage);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+    loadSessions();
+
+</script>
+}
+
+
+
+

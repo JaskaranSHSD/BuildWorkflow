@@ -1,0 +1,113 @@
+@{
+    ViewData["Title"] = "User Assignments";
+    var users = ViewBag.Users as List<BuildWorkflow.Models.AppUser> ?? new();
+    var models = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
+    var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
+    var buckets = ViewBag.Buckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+    var modelAssignments = ViewBag.ModelAssignments as List<BuildWorkflow.Models.UserAiModel> ?? new();
+    var toolAssignments = ViewBag.ToolAssignments as List<BuildWorkflow.Models.UserToolPermission> ?? new();
+    var bucketAssignments = ViewBag.BucketAssignments as List<BuildWorkflow.Models.UserRagBucket> ?? new();
+}
+
+<h2>User Assignments</h2>
+
+<h3>Assign Model</h3>
+<form asp-action="AssignModel" method="post" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <select name="userId" class="form-select">
+            @foreach (var u in users) { <option value="@u.Id">@u.Username</option> }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <select name="modelId" class="form-select">
+            @foreach (var m in models) { <option value="@m.Id">@m.Name</option> }
+        </select>
+    </div>
+    <div class="col-md-4"><button class="btn btn-primary w-100">Assign Model</button></div>
+</form>
+<table class="table table-sm">
+    <thead><tr><th>User</th><th>Model</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var a in modelAssignments)
+    {
+        <tr>
+            <td>@a.User.Username</td>
+            <td>@a.AiModel.Name</td>
+            <td>
+                <form asp-action="UnassignModel" method="post">
+                    <input type="hidden" name="id" value="@a.Id" />
+                    <button class="btn btn-sm btn-danger">Remove</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<h3>Assign Tool</h3>
+<form asp-action="AssignTool" method="post" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <select name="userId" class="form-select">
+            @foreach (var u in users) { <option value="@u.Id">@u.Username</option> }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <select name="toolId" class="form-select">
+            @foreach (var t in tools) { <option value="@t.Id">@t.Name</option> }
+        </select>
+    </div>
+    <div class="col-md-4"><button class="btn btn-primary w-100">Assign Tool</button></div>
+</form>
+<table class="table table-sm">
+    <thead><tr><th>User</th><th>Tool</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var a in toolAssignments)
+    {
+        <tr>
+            <td>@a.User.Username</td>
+            <td>@a.Tool.Name</td>
+            <td>
+                <form asp-action="UnassignTool" method="post">
+                    <input type="hidden" name="id" value="@a.Id" />
+                    <button class="btn btn-sm btn-danger">Remove</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<h3>Assign RAG Bucket</h3>
+<form asp-action="AssignRagBucket" method="post" class="row g-2 mb-3">
+    <div class="col-md-4">
+        <select name="userId" class="form-select">
+            @foreach (var u in users) { <option value="@u.Id">@u.Username</option> }
+        </select>
+    </div>
+    <div class="col-md-4">
+        <select name="bucketId" class="form-select">
+            @foreach (var b in buckets) { <option value="@b.Id">@b.Name</option> }
+        </select>
+    </div>
+    <div class="col-md-4"><button class="btn btn-primary w-100">Assign Bucket</button></div>
+</form>
+<table class="table table-sm">
+    <thead><tr><th>User</th><th>RAG Bucket</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var a in bucketAssignments)
+    {
+        <tr>
+            <td>@a.User.Username</td>
+            <td>@a.RagBucket.Name</td>
+            <td>
+                <form asp-action="UnassignRagBucket" method="post">
+                    <input type="hidden" name="id" value="@a.Id" />
+                    <button class="btn btn-sm btn-danger">Remove</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<a asp-action="Index" class="btn btn-secondary">Back to Dashboard</a>

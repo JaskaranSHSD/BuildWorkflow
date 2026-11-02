@@ -1,0 +1,33 @@
+@{
+    ViewData["Title"] = "Profile";
+    var user = ViewBag.User as BuildWorkflow.Models.AppUser;
+    var models = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
+    var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
+    var buckets = ViewBag.Buckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+}
+<div class="container py-4">
+    <div class="card p-4 mb-4">
+        <h2 class="mb-1">Account Profile</h2>
+        <p class="text-muted mb-0">Signed in as @(user?.Username ?? User.Identity?.Name). Role: @(user?.Role ?? "User").</p>
+    </div>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="card p-3 h-100">
+                <h5>Assigned Models</h5>
+                @if (models.Any()) { foreach (var m in models) { <div class="badge rounded-pill text-bg-light border mb-1">@m.Name</div> } } else { <span class="text-muted small">No models assigned.</span> }
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 h-100">
+                <h5>Assigned Tools</h5>
+                @if (tools.Any()) { foreach (var t in tools) { <div class="badge rounded-pill text-bg-light border mb-1">@t.Name</div> } } else { <span class="text-muted small">No tools assigned.</span> }
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3 h-100">
+                <h5>Assigned RAG Buckets</h5>
+                @if (buckets.Any()) { foreach (var b in buckets) { <div class="badge rounded-pill text-bg-light border mb-1">@b.Name</div> } } else { <span class="text-muted small">No buckets assigned.</span> }
+            </div>
+        </div>
+    </div>
+</div>

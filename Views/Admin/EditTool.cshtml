@@ -1,0 +1,146 @@
+@model BuildWorkflow.Models.ToolDefinition
+@{
+    ViewData["Title"] = "Edit Tool";
+    var api = Model.ApiConfiguration;
+    var sql = Model.SqlConfiguration;
+    var sftp = Model.SftpConfiguration;
+    var type = (Model.ToolType ?? "").ToLowerInvariant();
+    bool isApi = type == "api" || type == "http";
+    bool isSql = type == "sqlreader" || type == "database" || type == "sqltoexcel" || type == "sqlexcel" ||
+                 type == "sqlsinglequery" || type == "sqlquery" || type == "sqlprocedure" || type == "sqlstoredprocedure" ||
+                 type == "fixedsqlquery" || type == "sqlsingle";
+    bool isSftp = type == "sftp";
+}
+
+<h2>Edit Tool: @Model.Name</h2>
+<form asp-action="UpdateTool" method="post" class="card p-4">
+    <input type="hidden" name="id" value="@Model.Id" />
+    <input type="hidden" name="toolType" value="@Model.ToolType" />
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label">Tool Name</label>
+            <input name="name" class="form-control" value="@Model.Name" />
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Description</label>
+            <input name="description" class="form-control" value="@Model.Description" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Tool Type</label>
+            <input class="form-control" value="@Model.ToolType" disabled />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Tool Group</label>
+            <select name="toolGroupId" class="form-select">
+                <option value="">None</option>
+                @foreach (var g in (ViewBag.ToolGroups as List<BuildWorkflow.Models.ToolGroup> ?? new List<BuildWorkflow.Models.ToolGroup>()))
+                {
+                    <option value="@g.Id" selected="@(Model.ToolGroupId == g.Id)">@g.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (isApi)
+    {
+        <div class="card border-0 bg-light mt-4 p-3">
+            <h5 class="mb-3">API Configuration</h5>
+            <div class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label">HTTP Method</label>
+                    <select name="httpMethod" class="form-select">
+                        @foreach (var m in new[] { "GET","POST","PUT","DELETE","PATCH" })
+                        {
+                            <option selected="@(api?.HttpMethod == m)">@m</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-10">
+                    <label class="form-label">Endpoint URL</label>
+                    <input name="endpointOrType" class="form-control" value="@api?.Endpoint" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Auth Type</label>
+                    <input name="authType" class="form-control" value="@(api?.AuthType ?? "None")" />
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Headers JSON</label>
+                    <textarea name="headersJson" class="form-control" rows="2">@api?.HeadersJson</textarea>
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label">Credential</label>
+                    <input name="credential" class="form-control" value="@api?.Credential" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Request Template</label>
+                    <textarea name="requestTemplate" class="form-control" rows="4">@api?.RequestTemplate</textarea>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Response Path</label>
+                    <textarea name="responsePath" class="form-control" rows="4">@api?.ResponsePath</textarea>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (isSql)
+    {
+        <div class="card border-0 bg-light mt-4 p-3">
+            <h5 class="mb-3">SQL Reader Configuration</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Database Type</label>
+                    <select name="databaseType" class="form-select">
+                        @foreach (var dbType in new[] { "PostgreSQL","SqlServer","MySQL" })
+                        {
+                            <option value="@dbType" selected="@(sql?.DatabaseType == dbType)">@dbType</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Connection String</label>
+                    <input name="connectionString" class="form-control" value="@sql?.ConnectionString" />
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label">Query / Procedure (for single-query SQL tools)</label>
+                    <textarea name="sqlQuery" class="form-control" rows="4">@sql?.Query</textarea>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (isSftp)
+    {
+        <div class="card border-0 bg-light mt-4 p-3">
+            <h5 class="mb-3">SFTP Configuration</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Host</label>
+                    <input name="sftpHost" class="form-control" value="@sftp?.Host" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Port</label>
+                    <input name="sftpPort" type="number" class="form-control" value="@(sftp?.Port ?? 22)" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Username</label>
+                    <input name="sftpUsername" class="form-control" value="@sftp?.Username" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Password</label>
+                    <input name="sftpPassword" type="password" class="form-control" value="@sftp?.Password" />
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label">Remote Base Path</label>
+                    <input name="sftpRemoteBasePath" class="form-control" value="@(string.IsNullOrWhiteSpace(sftp?.RemoteBasePath) ? "/" : sftp?.RemoteBasePath)" />
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="mt-4 d-flex justify-content-end gap-2">
+        <a asp-action="Tools" class="btn btn-secondary">Cancel</a>
+        <button class="btn btn-primary">Save Changes</button>
+    </div>
+</form>

@@ -1,0 +1,70 @@
+@model BuildWorkflow.Models.Organization
+@{
+    ViewData["Title"] = "Manage Organization";
+    var users = ViewBag.Users as List<BuildWorkflow.Models.AppUser> ?? new List<BuildWorkflow.Models.AppUser>();
+}
+<h2 class="mb-3">@Model.Name</h2>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Add User</h5>
+        <form asp-controller="PlatformAdmin" asp-action="CreateUser" method="post" class="row g-2">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="organizationId" value="@Model.Id" />
+            <div class="col-md-2">
+                <input name="username" class="form-control" placeholder="Username" required />
+            </div>
+            <div class="col-md-2">
+                <input name="password" class="form-control" placeholder="Password" required />
+            </div>
+            <div class="col-md-2">
+                <select name="role" class="form-select">
+                    <option value="User">User</option>
+                    <option value="OrgAdmin">OrgAdmin</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input name="fullName" class="form-control" placeholder="Full name" />
+            </div>
+            <div class="col-md-2">
+                <input name="email" class="form-control" placeholder="Email" />
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary">Add</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Full Name</th>
+            <th>Email</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var user in users)
+        {
+            <tr>
+                <td>@user.Username</td>
+                <td>@user.Role</td>
+                <td>@user.FullName</td>
+                <td>@user.Email</td>
+                <td>
+                    <form asp-controller="PlatformAdmin" asp-action="DeleteUser" method="post" class="d-inline">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="id" value="@user.Id" />
+                        <input type="hidden" name="organizationId" value="@Model.Id" />
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<a class="btn btn-secondary" asp-controller="PlatformAdmin" asp-action="Index">Back</a>

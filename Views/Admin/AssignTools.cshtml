@@ -1,0 +1,55 @@
+@{
+    ViewData["Title"] = "Assign Tools";
+    var users = ViewBag.Users as List<BuildWorkflow.Models.AppUser> ?? new();
+    var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
+    var groups = ViewBag.ToolGroups as List<BuildWorkflow.Models.ToolGroup> ?? new();
+    var assignments = ViewBag.Assignments as List<BuildWorkflow.Models.UserToolPermission> ?? new();
+}
+<div class="card p-3">
+    <h2>Assign Tools to Users</h2>
+    <form asp-action="AssignTool" method="post" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <select name="userId" class="form-select">
+                @foreach (var u in users) { <option value="@u.Id">@u.Username</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <select name="toolId" class="form-select">
+                @foreach (var t in tools) { <option value="@t.Id">@t.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-4"><button class="btn btn-primary w-100">Assign Tool</button></div>
+    </form>
+    <form asp-action="AssignToolGroup" method="post" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <select name="userId" class="form-select">
+                @foreach (var u in users) { <option value="@u.Id">@u.Username</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <select name="toolGroupId" class="form-select">
+                @foreach (var g in groups) { <option value="@g.Id">@g.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-4"><button class="btn btn-outline-primary w-100">Assign Tool Group</button></div>
+    </form>
+    <table class="table table-sm">
+        <thead><tr><th>User</th><th>Tool</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var a in assignments)
+        {
+            <tr>
+                <td>@a.User.Username</td>
+                <td>@a.Tool.Name</td>
+                <td>
+                    <form asp-action="UnassignTool" method="post">
+                        <input type="hidden" name="id" value="@a.Id" />
+                        <button class="btn btn-sm btn-danger">Remove</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+    <a asp-action="Index" class="btn btn-secondary mt-2">Back to Dashboard</a>
+</div>

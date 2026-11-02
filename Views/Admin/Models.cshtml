@@ -1,0 +1,175 @@
+@model List<BuildWorkflow.Models.AiModelDefinition>
+@{
+    ViewData["Title"] = "AI Models";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">AI Models</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModelModal">Add Model</button>
+</div>
+
+<div class="modal fade" id="createModelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="CreateModel" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add AI Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input name="Name" class="form-control" placeholder="Name" required />
+                        <div class="form-text">Required AI model display name.</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Provider <span class="text-danger">*</span></label>
+                        <input name="Provider" class="form-control" placeholder="Provider" value="Ollama" required />
+                        <div class="form-text">Required provider, for example Ollama.</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Endpoint <span class="text-danger">*</span></label>
+                        <input name="Endpoint" class="form-control" placeholder="Endpoint" value="http://localhost:11434" required />
+                        <div class="form-text">Required service endpoint URL.</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Model Name <span class="text-danger">*</span></label>
+                        <input name="ModelName" class="form-control" placeholder="Model name" required />
+                        <div class="form-text">Required model identifier, for example beam:cloud.</div>
+                    </div>
+                    <div class="mb-2"><textarea name="SystemPrompt" class="form-control" rows="3" placeholder="System prompt (optional)"></textarea></div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="SupportsTools" value="true" checked />
+                        <label class="form-check-label">Supports tools</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="SupportsImages" value="true" />
+                        <label class="form-check-label">Supports images</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary">Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editModelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="UpdateModel" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit AI Model</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="Id" id="edit-model-id" />
+                    <div class="mb-2">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input name="Name" id="edit-model-name" class="form-control" required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Provider <span class="text-danger">*</span></label>
+                        <input name="Provider" id="edit-model-provider" class="form-control" required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Endpoint <span class="text-danger">*</span></label>
+                        <input name="Endpoint" id="edit-model-endpoint" class="form-control" required />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Model Name <span class="text-danger">*</span></label>
+                        <input name="ModelName" id="edit-model-modelname" class="form-control" required />
+                    </div>
+                    <div class="mb-2"><textarea name="SystemPrompt" id="edit-model-systemprompt" class="form-control" rows="3"></textarea></div>
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="IsActive" value="false" />
+                        <input class="form-check-input" type="checkbox" name="IsActive" id="edit-model-isactive" value="true" />
+                        <label class="form-check-label" for="edit-model-isactive">Active</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="SupportsTools" value="false" />
+                        <input class="form-check-input" type="checkbox" name="SupportsTools" id="edit-model-supportstools" value="true" />
+                        <label class="form-check-label" for="edit-model-supportstools">Supports tools</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input type="hidden" name="SupportsImages" value="false" />
+                        <input class="form-check-input" type="checkbox" name="SupportsImages" id="edit-model-supportsimages" value="true" />
+                        <label class="form-check-label" for="edit-model-supportsimages">Supports images</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<table class="table">
+    <thead><tr><th>Name</th><th>Provider</th><th>Endpoint</th><th>Model</th><th>Tools</th><th>Images</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var item in Model)
+    {
+        <tr>
+            <td>@item.Name</td>
+            <td>@item.Provider</td>
+            <td>@item.Endpoint</td>
+            <td>@item.ModelName</td>
+            <td>@item.SupportsTools</td>
+            <td>@item.SupportsImages</td>
+            <td>@item.IsActive</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#editModelModal"
+                        data-id="@item.Id"
+                        data-name="@item.Name"
+                        data-provider="@item.Provider"
+                        data-endpoint="@item.Endpoint"
+                        data-modelname="@item.ModelName"
+                        data-systemprompt="@item.SystemPrompt"
+                        data-isactive="@item.IsActive.ToString().ToLowerInvariant()"
+                        data-supportstools="@item.SupportsTools.ToString().ToLowerInvariant()"
+                        data-supportsimages="@item.SupportsImages.ToString().ToLowerInvariant()">Edit</button>
+                <form asp-action="DeleteModel" method="post" class="d-inline">
+                    <input type="hidden" name="id" value="@item.Id" />
+                    <button class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+@if ((int)(ViewBag.TotalPages ?? 1) > 1)
+{
+    <nav class="mt-3">
+        <ul class="pagination">
+            @for (var p = 1; p <= (int)ViewBag.TotalPages; p++)
+            {
+                <li class="page-item @(p == (int)ViewBag.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Models" asp-route-page="@p">@p</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+<a asp-action="Index" class="btn btn-secondary">Back</a>
+
+<script>
+    document.addEventListener('show.bs.modal', function (event) {
+        const editModal = document.getElementById('editModelModal');
+        if (!editModal || event.target !== editModal) return;
+        const button = event.relatedTarget;
+        if (!button) return;
+        document.getElementById('edit-model-id').value = button.getAttribute('data-id') || '';
+        document.getElementById('edit-model-name').value = button.getAttribute('data-name') || '';
+        document.getElementById('edit-model-provider').value = button.getAttribute('data-provider') || '';
+        document.getElementById('edit-model-endpoint').value = button.getAttribute('data-endpoint') || '';
+        document.getElementById('edit-model-modelname').value = button.getAttribute('data-modelname') || '';
+        document.getElementById('edit-model-systemprompt').value = button.getAttribute('data-systemprompt') || '';
+        document.getElementById('edit-model-isactive').checked = button.getAttribute('data-isactive') === 'true';
+        document.getElementById('edit-model-supportstools').checked = button.getAttribute('data-supportstools') === 'true';
+        document.getElementById('edit-model-supportsimages').checked = button.getAttribute('data-supportsimages') === 'true';
+    });
+</script>

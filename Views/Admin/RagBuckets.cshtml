@@ -1,0 +1,142 @@
+@model List<BuildWorkflow.Models.RagBucket>
+@{
+    ViewData["Title"] = "RAG Buckets";
+    var users = ViewBag.Users as List<BuildWorkflow.Models.AppUser> ?? new();
+    var ragAssignments = ViewBag.RagAssignments as List<BuildWorkflow.Models.UserRagBucket> ?? new();
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">RAG Buckets</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createBucketModal">Add Bucket</button>
+    <a asp-action="KnowledgeGroups" class="btn btn-outline-secondary">Manage Groups</a>
+</div>
+
+<div class="modal fade" id="createBucketModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form asp-action="CreateRagBucket" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create RAG Bucket</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Bucket Name <span class="text-danger">*</span></label>
+                        <input name="Name" class="form-control" placeholder="Bucket name" required />
+                        <div class="form-text">Required bucket name.</div>
+                    </div>
+                    <div class="mb-2">
+                        <input name="Description" class="form-control" placeholder="Description" />
+                        <div class="form-text">Optional bucket description.</div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Knowledge Group</label>
+                        <select name="KnowledgeGroupId" class="form-select">
+                            <option value="">General</option>
+                            @foreach (var g in (ViewBag.KnowledgeGroups as List<BuildWorkflow.Models.KnowledgeGroup> ?? new List<BuildWorkflow.Models.KnowledgeGroup>()))
+                            {
+                                <option value="@g.Id">@g.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary">Add Bucket</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th>Group</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+    @foreach (var item in Model)
+    {
+        <tr>
+            <td>@item.Name</td>
+            <td>@item.Description</td>
+            <td>@(item.KnowledgeGroup?.Name ?? "General")</td>
+            <td>@item.IsActive</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-success border border-success me-1" onclick="openBucketKnowledge('@item.Id','@item.Name')">Manage Knowledge</button>
+                <form asp-action="DeleteRagBucket" method="post" class="d-inline">
+                    <input type="hidden" name="id" value="@item.Id" />
+                    <button class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+@if ((int)(ViewBag.TotalPages ?? 1) > 1)
+{
+    <nav class="mt-3">
+        <ul class="pagination">
+            @for (var p = 1; p <= (int)ViewBag.TotalPages; p++)
+            {
+                <li class="page-item @(p == (int)ViewBag.Page ? "active" : "")">
+                    <a class="page-link" asp-action="RagBuckets" asp-route-page="@p">@p</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+<a asp-action="Index" class="btn btn-secondary">Back</a>
+
+<div class="modal fade" id="bucketKnowledgeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form asp-action="UploadRagKnowledge" method="post" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">Manage Knowledge - <span id="bucketKnowledgeName"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="bucketId" id="bucketKnowledgeId" />
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-8"><input type="file" name="file" class="form-control" accept=".txt,.csv,.md,.pdf,.xlsx,.xls,.docx" /></div>
+                        <div class="col-md-4"><button class="btn btn-primary w-100">Upload Knowledge</button></div>
+                    </div>
+                    <div id="bucketKnowledgeDocs"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+const bucketDocuments = [
+@foreach (var d in (ViewBag.Documents as List<BuildWorkflow.Models.RagDocument> ?? new()))
+{
+    var safeName = d.FileName?.Replace("\\", "\\\\").Replace("'", "\\'") ?? string.Empty;
+    @:{ id: '@d.Id', bucketId: '@d.RagBucketId', fileName: '@safeName', createdAt: '@d.CreatedAt.ToString("yyyy-MM-dd HH:mm")' },
+}
+];
+function openBucketKnowledge(bucketId, name) {
+    document.getElementById('bucketKnowledgeId').value = bucketId;
+    document.getElementById('bucketKnowledgeName').textContent = name;
+    const container = document.getElementById('bucketKnowledgeDocs');
+    const docs = bucketDocuments.filter(function(doc) { return doc.bucketId === bucketId; });
+    if (!docs.length) {
+        container.innerHTML = '<div class="text-muted small fst-italic">No knowledge uploaded for this bucket yet.</div>';
+    } else {
+        let html = '<table class="table table-sm"><thead><tr><th>File</th><th>Created</th><th></th></tr></thead><tbody>';
+        for (const doc of docs) {
+            html += '<tr><td>' + doc.fileName + '</td><td>' + doc.createdAt + '</td><td>';
+            html += '<form action="/Admin/DeleteRagDocument" method="post" class="d-inline">';
+            html += '<input type="hidden" name="id" value="' + doc.id + '" />';
+            html += '<button class="btn btn-sm btn-danger">Remove</button></form></td></tr>';
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+    new bootstrap.Modal(document.getElementById('bucketKnowledgeModal')).show();
+}
+</script>

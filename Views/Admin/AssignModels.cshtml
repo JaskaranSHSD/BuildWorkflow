@@ -1,0 +1,41 @@
+@{
+    ViewData["Title"] = "Assign Models";
+    var users = ViewBag.Users as List<BuildWorkflow.Models.AppUser> ?? new();
+    var models = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
+    var assignments = ViewBag.Assignments as List<BuildWorkflow.Models.UserAiModel> ?? new();
+}
+<div class="card p-3">
+    <h2>Assign Models to Users</h2>
+    <form asp-action="AssignModel" method="post" class="row g-2 mb-3">
+        <div class="col-md-4">
+            <select name="userId" class="form-select">
+                @foreach (var u in users) { <option value="@u.Id">@u.Username</option> }
+            </select>
+        </div>
+        <div class="col-md-4">
+            <select name="modelId" class="form-select">
+                @foreach (var m in models) { <option value="@m.Id">@m.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-4"><button class="btn btn-primary w-100">Assign Model</button></div>
+    </form>
+    <table class="table table-sm">
+        <thead><tr><th>User</th><th>Model</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var a in assignments)
+        {
+            <tr>
+                <td>@a.User.Username</td>
+                <td>@a.AiModel.Name</td>
+                <td>
+                    <form asp-action="UnassignModel" method="post">
+                        <input type="hidden" name="id" value="@a.Id" />
+                        <button class="btn btn-sm btn-danger">Remove</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+    <a asp-action="Index" class="btn btn-secondary mt-2">Back to Dashboard</a>
+</div>

@@ -1,0 +1,243 @@
+@model List<BuildWorkflow.Models.ToolDefinition>
+@{
+    ViewData["Title"] = "Tools";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1">Tools</h2>
+        <p class="text-muted mb-0">Create API, SQL, file, or system tools. Configuration fields change based on the selected tool type.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createToolModal">Add Tool</button>
+    <a asp-action="ToolGroups" class="btn btn-outline-secondary">Manage Groups</a>
+        <a asp-action="Index" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+    </div>
+</div>
+
+<div class="modal fade" id="createToolModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form asp-action="CreateTool" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Tool</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Tool Name <span class="text-danger">*</span></label>
+                            <input name="Name" class="form-control" placeholder="For example: Weather API" required />
+                            <div class="form-text">Required unique tool name.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Description</label>
+                            <input name="Description" class="form-control" placeholder="Short description shown to admins and users" />
+                            <div class="form-text">Optional but recommended.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Tool Type</label>
+                            <select name="ToolType" id="toolType" class="form-select" onchange="syncToolConfig()">
+                                <option value="Api">API</option>
+                                <option value="Http">HTTP</option>
+                                <option value="SqlReader">SQL Reader</option>
+                                <option value="SqlSingleQuery">SQL Single Query / Procedure</option>
+                                <option value="FileReader">File Reader</option>
+                                <option value="System">System</option>
+                                <option value="Sftp">SFTP</option>
+                                <option value="SqlToExcel">SQL To Excel</option>
+                                <option value="ExportExcel">Export Excel</option>
+                                <option value="ExportText">Export Text</option>
+                                <option value="ExportWord">Export Word</option>
+                                <option value="Mcp">MCP Server</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="httpMethodField">
+                            <label class="form-label">HTTP Method</label>
+                            <select name="HttpMethod" class="form-select">
+                                <option>GET</option>
+                                <option>POST</option>
+                                <option>PUT</option>
+                                <option>DELETE</option>
+                                <option>PATCH</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="endpointField">
+                            <label class="form-label">Endpoint URL</label>
+                            <input name="EndpointOrType" class="form-control" placeholder="https://api.example.com/resource or path" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Tool Group</label>
+                            <select name="toolGroupId" class="form-select">
+                                <option value="">None</option>
+                                @foreach (var g in (ViewBag.ToolGroups as List<BuildWorkflow.Models.ToolGroup> ?? new List<BuildWorkflow.Models.ToolGroup>()))
+                                {
+                                    <option value="@g.Id">@g.Name</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="apiConfig" class="card border-0 bg-light mt-4 p-3">
+                        <h5 class="mb-3">API Configuration</h5>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Auth Type</label>
+                                <input name="AuthType" class="form-control" placeholder="None, Bearer, ApiKey..." value="None" />
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Headers JSON</label>
+                                <textarea name="HeadersJson" class="form-control" rows="2" placeholder='{"Authorization":"Bearer token"}'></textarea>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Credential</label>
+                                <input name="Credential" class="form-control" placeholder="API key or token (development/simple auth only)" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Request Template</label>
+                                <textarea name="RequestTemplate" class="form-control" rows="4" placeholder='{"query":"{{message}}"}'></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Response Path</label>
+                                <textarea name="ResponsePath" class="form-control" rows="4" placeholder="data.items[0].text"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sqlConfig" class="card border-0 bg-light mt-4 p-3">
+                        <h5 class="mb-3">SQL Reader Configuration</h5>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Database Type</label>
+                                <select name="DatabaseType" class="form-select">
+                                    <option value="PostgreSQL">PostgreSQL</option>
+                                    <option value="SqlServer">SQL Server</option>
+                                    <option value="MySQL">MySQL</option>
+                                </select>
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Connection String</label>
+                                <input name="ConnectionString" class="form-control" placeholder="Database connection string for read-only queries" />
+                                <div class="form-text">Required for SQL tool types.</div>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Query / Procedure (single-query SQL tools only)</label>
+                                <textarea name="SqlQuery" class="form-control" rows="4" placeholder="SELECT ... or CALL procedure()"></textarea>
+                                <div class="form-text">Required only for SQL Single Query / Procedure tool types.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="sftpConfig" class="card border-0 bg-light mt-4 p-3">
+                        <h5 class="mb-3">SFTP Configuration</h5>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Host</label>
+                                <input name="SftpHost" class="form-control" placeholder="sftp.example.com" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Port</label>
+                                <input name="SftpPort" type="number" class="form-control" placeholder="22" value="22" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Username</label>
+                                <input name="SftpUsername" class="form-control" placeholder="sftp-user" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Password</label>
+                                <input name="SftpPassword" type="password" class="form-control" placeholder="Password" />
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label">Remote Base Path</label>
+                                <input name="SftpRemoteBasePath" class="form-control" placeholder="/" value="/" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-primary">Add Tool</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card p-3">
+    <h5 class="mb-3">Existing Tools</h5>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Type</th>
+                    <th>Group</th>
+                    <th>Status</th>
+                    <th class="text-end">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model)
+            {
+                <tr>
+                    <td class="fw-medium">@item.Name</td>
+                    <td>@item.Description</td>
+                    <td><span class="badge rounded-pill text-bg-light border">@item.ToolType</span></td>
+                    <td>@(item.ToolGroup?.Name ?? "-")</td>
+                    <td>
+                        @if (item.IsActive)
+                        {
+                            <span class="badge text-bg-success">Active</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary">Inactive</span>
+                        }
+                    </td>
+                    <td class="text-end">
+                        <a asp-action="EditTool" asp-route-id="@item.Id" class="btn btn-sm btn-outline-primary me-1">Edit</a>
+                        <form asp-action="DeleteTool" method="post" class="d-inline">
+                            <input type="hidden" name="id" value="@item.Id" />
+                            <button class="btn btn-sm btn-outline-danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if ((int)(ViewBag.TotalPages ?? 1) > 1)
+{
+    <nav class="mt-3">
+        <ul class="pagination">
+            @for (var p = 1; p <= (int)ViewBag.TotalPages; p++)
+            {
+                <li class="page-item @(p == (int)ViewBag.Page ? "active" : "")">
+                    <a class="page-link" asp-action="Tools" asp-route-page="@p">@p</a>
+                </li>
+            }
+        </ul>
+    </nav>
+}
+
+@section Scripts {
+<script>
+function syncToolConfig() {
+    const type = (document.getElementById('toolType').value || '').toLowerCase();
+    const showApi = type === 'api' || type === 'http' || type === 'mcp';
+    const showSql = type === 'sqlreader' || type === 'database' || type === 'sqltoexcel' || type === 'sqlexcel' || type === 'sqlsinglequery' || type === 'sqlquery' || type === 'sqlprocedure' || type === 'sqlstoredprocedure' || type === 'fixedsqlquery' || type === 'sqlsingle';
+    const showSftp = type === 'sftp';
+    document.getElementById('apiConfig').style.display = showApi ? '' : 'none';
+    document.getElementById('sqlConfig').style.display = showSql ? '' : 'none';
+    document.getElementById('sftpConfig').style.display = showSftp ? '' : 'none';
+    const httpField = document.getElementById('httpMethodField');
+    const endpointField = document.getElementById('endpointField');
+    if (httpField) httpField.style.display = showApi ? '' : 'none';
+    if (endpointField) endpointField.style.display = showApi ? '' : 'none';
+}
+document.addEventListener('DOMContentLoaded', syncToolConfig);
+</script>
+}

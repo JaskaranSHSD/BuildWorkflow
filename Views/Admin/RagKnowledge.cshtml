@@ -1,0 +1,41 @@
+@{
+    ViewData["Title"] = "RAG Knowledge";
+    var buckets = ViewBag.Buckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+    var documents = ViewBag.Documents as List<BuildWorkflow.Models.RagDocument> ?? new();
+}
+<div class="card p-3">
+    <h2>Add Knowledge to RAG Buckets</h2>
+    <form asp-action="UploadRagKnowledge" method="post" enctype="multipart/form-data" class="row g-2 mb-3">
+        <div class="col-md-3">
+            <select name="bucketId" class="form-select">
+                @foreach (var b in buckets) { <option value="@b.Id">@b.Name</option> }
+            </select>
+        </div>
+        <div class="col-md-6">
+            <input type="file" name="file" class="form-control" accept=".txt,.csv,.md,.pdf,.xlsx,.xls,.docx" />
+        </div>
+        <div class="col-md-3"><button class="btn btn-primary w-100">Upload Knowledge</button></div>
+    </form>
+
+    <table class="table table-sm">
+        <thead><tr><th>Bucket</th><th>File</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+        @foreach (var d in documents)
+        {
+            var bucket = buckets.FirstOrDefault(b => b.Id == d.RagBucketId);
+            <tr>
+                <td>@(bucket?.Name ?? d.RagBucketId.ToString())</td>
+                <td>@d.FileName</td>
+                <td>@d.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>
+                    <form asp-action="DeleteRagDocument" method="post">
+                        <input type="hidden" name="id" value="@d.Id" />
+                        <button class="btn btn-sm btn-danger">Remove</button>
+                    </form>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+    <a asp-action="Index" class="btn btn-secondary mt-2">Back to Dashboard</a>
+</div>

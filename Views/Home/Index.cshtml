@@ -1,0 +1,20 @@
+﻿@{
+    ViewData["Title"] = "Home Page";
+}
+
+<div class="text-center py-5">
+    <h1 class="display-5 fw-medium mb-2">Microsoft Agent Framework + Ollama</h1>
+    <p class="text-muted mb-4">Manage models, tools, knowledge, and users from the admin workspace. Sign in to start chatting.</p>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <a asp-controller="Chat" asp-action="Index" class="btn btn-primary">Open Chat</a>
+        @if ((User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")))
+        {
+            <a asp-controller="Admin" asp-action="Index" class="btn btn-outline-secondary ms-2">Open Admin</a>
+        }
+    }
+    else
+    {
+        <a asp-controller="Account" asp-action="Login" class="btn btn-primary">Sign In</a>
+    }
+</div>
