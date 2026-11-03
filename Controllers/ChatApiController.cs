@@ -39,12 +39,60 @@ public class ChatApiController : ControllerBase
 
         try
         {
-            var result = await _aiCenter.SendMessageAsync(userId, request.ModelId, request.Message, request.AttachedFileIds, request.SessionId, request.RagBucketId, request.SelectedToolIds, request.SelectedRagBucketIds, cancellationToken);
+            var result = await _aiCenter.SendMessageAsync(userId, request.ModelId, request.Message, request.AttachedFileIds, request.SessionId, request.RagBucketId, request.SelectedToolIds, request.SelectedRagBucketIds, CancellationToken.None);
             return Ok(new { reply = result.Reply, sessionId = result.SessionId, modelName = result.ModelName });
         }
         catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("chat/stream")]
+    public async Task ChatStream([FromBody] ChatRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message) && (request.AttachedFileIds == null || request.AttachedFileIds.Length == 0))
+        {
+            Response.StatusCode = 400;
+            await Response.WriteAsJsonAsync(new { error = "Message is required." }, cancellationToken);
+            return;
+        }
+
+        Guid? userId = null;
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (Guid.TryParse(userIdValue, out var parsedUserId))
+        {
+            userId = parsedUserId;
+        }
+
+        Response.Headers["Content-Type"] = "text/event-stream";
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["Connection"] = "keep-alive";
+
+        try
+        {
+            await foreach (var chunk in _aiCenter.SendMessageStreamAsync(userId, request.ModelId, request.Message, request.AttachedFileIds, request.SessionId, request.RagBucketId, request.SelectedToolIds, request.SelectedRagBucketIds, CancellationToken.None))
+            {
+                try
+                {
+                    await Response.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(chunk)}\n\n", cancellationToken);
+                    await Response.Body.FlushAsync(cancellationToken);
+                }
+                catch
+                {
+                    // Client may have left; continue processing and persist the reply.
+                }
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            await Response.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(new AiChatStreamChunk(null, null, null, true, ex.Message))}\n\n", cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await Response.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(new AiChatStreamChunk(null, null, null, true, ex.Message))}\n\n", cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
         }
     }
 

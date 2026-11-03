@@ -31,6 +31,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 builder.Services.AddAuthorization();
 
 builder.Services.AddTransient<IAiChatConnector, OllamaConnector>();
+builder.Services.AddTransient<IAiChatConnector, OpenAIConnector>();
 builder.Services.AddSingleton<WorkflowRunQueue>();
 builder.Services.AddSingleton<WorkflowExecutionService>();
 builder.Services.AddHostedService<WorkflowBackgroundService>();

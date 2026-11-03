@@ -1,4 +1,4 @@
-@{
+﻿@{
     ViewData["Title"] = "Chat";
     var chatModels = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
     var defaultModel = chatModels.FirstOrDefault();
@@ -33,7 +33,7 @@
         display: none;
     }
     .tool-group-summary::before {
-        content: "�";
+        content: "›";
         margin-right: 0.55rem;
         color: #5f6368;
         font-size: 1.25rem;
@@ -148,7 +148,7 @@
         }
                 <button id="chat-send" class="btn btn-primary" type="button">Send</button>
                 <span id="chat-progress" class="spinner-border spinner-border-sm text-primary ms-2" style="display:none;" aria-hidden="true"></span>
-                <span id="chat-progress-text" class="small text-muted ms-2" style="display:none;">Working…</span>
+                <span id="chat-progress-text" class="small text-muted ms-2" style="display:none;">Workingâ€¦</span>
             </div>
         </div>
     </main>
@@ -347,21 +347,62 @@
         if (progressText) progressText.style.display = 'inline';
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 180000);
-        let res;
         try {
-            res = await fetch('/api/chat', {
+            const res = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 signal: controller.signal,
                 body: JSON.stringify({ message: message || 'Please use the attached file(s).', modelId: modelSelect ? modelSelect.value : null, attachedFileIds, sessionId: currentSessionId, ragBucketId: null, selectedToolIds: Array.from(document.querySelectorAll('.chat-tool:checked')).map(cb => cb.value), selectedRagBucketIds: Array.from(document.querySelectorAll('.chat-knowledge:checked')).map(cb => cb.value) })
             });
-            const data = await res.json();
-            if (!res.ok) append('Error', data.error ?? 'Request failed');
-            else {
-                append('Assistant', data.reply ?? '');
-                if (data.sessionId) {
-                    currentSessionId = data.sessionId;
-                    await loadSessions();
+            if (!res.ok) {
+                let data = null;
+                try { data = await res.json(); } catch { }
+                append('Error', (data && data.error) ? data.error : 'Request failed');
+            } else {
+                const assistantDiv = document.createElement('div');
+                assistantDiv.className = 'chat-message assistant';
+                const meta = document.createElement('div');
+                meta.className = 'chat-message-meta';
+                meta.textContent = 'Assistant';
+                const body = document.createElement('div');
+                body.className = 'chat-message-body';
+                assistantDiv.appendChild(meta);
+                assistantDiv.appendChild(body);
+                log.appendChild(assistantDiv);
+                let accumulated = '';
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop() || '';
+                    for (const part of parts) {
+                        const lines = part.split('\n');
+                        for (const line of lines) {
+                            if (!line.startsWith('data:')) continue;
+                            const payload = line.slice(5).trim();
+                            if (!payload) continue;
+                            try {
+                                const chunk = JSON.parse(payload);
+                                if (chunk.Error) { append('Error', chunk.Error); return; }
+                                if (chunk.Delta) {
+                                    accumulated += chunk.Delta;
+                                    body.innerHTML = accumulated
+                                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                                        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                                        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                                        .replace(/([^]+)/g, '<code>$1</code>')
+                                        .replace(/\n/g, '<br>');
+                                }
+                                if (chunk.SessionId) currentSessionId = chunk.SessionId;
+                                if (chunk.Done) await loadSessions();
+                            } catch { }
+                        }
+                    }
+                    requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
                 }
             }
         } catch (err) {

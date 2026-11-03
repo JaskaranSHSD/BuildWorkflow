@@ -21,4 +21,21 @@ public class OllamaConnector : IAiChatConnector
         var response = await agent.RunAsync(messages, session, cancellationToken: cancellationToken);
         return response.Text;
     }
+
+    public async IAsyncEnumerable<string> ChatStreamAsync(AiModelDefinition model, IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages, IList<Microsoft.Extensions.AI.AITool>? tools = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var client = new OllamaApiClient(new Uri(model.Endpoint), model.ModelName);
+        var agent = new ChatClientAgent(
+            client,
+            instructions: model.SystemPrompt ?? "You are a helpful AI assistant. Answer concisely and accurately.",
+            name: model.Name,
+            tools: tools ?? new List<Microsoft.Extensions.AI.AITool>());
+
+        var session = await agent.CreateSessionAsync(cancellationToken);
+        await foreach (var update in agent.RunStreamingAsync(messages, session, cancellationToken: cancellationToken))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+                yield return update.Text;
+        }
+    }
 }

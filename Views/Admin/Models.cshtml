@@ -24,8 +24,11 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Provider <span class="text-danger">*</span></label>
-                        <input name="Provider" class="form-control" placeholder="Provider" value="Ollama" required />
-                        <div class="form-text">Required provider, for example Ollama.</div>
+                        <select name="Provider" class="form-select" required>
+                            <option value="Ollama" selected>Ollama</option>
+                            <option value="OpenAI">OpenAI</option>
+                        </select>
+                        <div class="form-text">Required provider.</div>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Endpoint <span class="text-danger">*</span></label>
@@ -72,7 +75,10 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Provider <span class="text-danger">*</span></label>
-                        <input name="Provider" id="edit-model-provider" class="form-control" required />
+                        <select name="Provider" id="edit-model-provider" class="form-select" required>
+                            <option value="Ollama">Ollama</option>
+                            <option value="OpenAI">OpenAI</option>
+                        </select>
                     </div>
                     <div class="mb-2">
                         <label class="form-label">Endpoint <span class="text-danger">*</span></label>
@@ -164,7 +170,16 @@
         if (!button) return;
         document.getElementById('edit-model-id').value = button.getAttribute('data-id') || '';
         document.getElementById('edit-model-name').value = button.getAttribute('data-name') || '';
-        document.getElementById('edit-model-provider').value = button.getAttribute('data-provider') || '';
+        var provider = (button.getAttribute('data-provider') || 'Ollama').trim();
+        var providerSelect = document.getElementById('edit-model-provider');
+        providerSelect.value = provider;
+        if (providerSelect.value !== provider) {
+            var opt = document.createElement('option');
+            opt.value = provider;
+            opt.text = provider;
+            providerSelect.add(opt);
+            providerSelect.value = provider;
+        }
         document.getElementById('edit-model-endpoint').value = button.getAttribute('data-endpoint') || '';
         document.getElementById('edit-model-modelname').value = button.getAttribute('data-modelname') || '';
         document.getElementById('edit-model-systemprompt').value = button.getAttribute('data-systemprompt') || '';

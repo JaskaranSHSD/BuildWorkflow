@@ -2,8 +2,13 @@ using BuildWorkflow.Data;
 using BuildWorkflow.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using System.Text;
 
 namespace BuildWorkflow.AICenter;
+
+public record AiChatResult(string Reply, Guid SessionId, string ModelName);
+
+public record AiChatStreamChunk(string? Delta, Guid? SessionId, string? ModelName, bool Done, string? Error = null);
 
 public class AICenterService
 {
@@ -22,9 +27,37 @@ public class AICenterService
 
     public async Task<AiChatResult> SendMessageAsync(Guid? userId, Guid? modelId, string message, IEnumerable<Guid>? attachedFileIds = null, Guid? sessionId = null, Guid? ragBucketId = null, IEnumerable<Guid>? selectedToolIds = null, IEnumerable<Guid>? selectedRagBucketIds = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(message))
+        var replyBuilder = new StringBuilder();
+        Guid resolvedSessionId = Guid.Empty;
+        string resolvedModelName = string.Empty;
+
+        await foreach (var chunk in SendMessageStreamAsync(userId, modelId, message, attachedFileIds, sessionId, ragBucketId, selectedToolIds, selectedRagBucketIds, cancellationToken))
         {
-            throw new ArgumentException("Message is required.", nameof(message));
+            if (!string.IsNullOrWhiteSpace(chunk.Delta))
+            {
+                replyBuilder.Append(chunk.Delta);
+            }
+
+            if (chunk.SessionId.HasValue)
+            {
+                resolvedSessionId = chunk.SessionId.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(chunk.ModelName))
+            {
+                resolvedModelName = chunk.ModelName!;
+            }
+        }
+
+        return new AiChatResult(replyBuilder.ToString(), resolvedSessionId, resolvedModelName);
+    }
+
+    public async IAsyncEnumerable<AiChatStreamChunk> SendMessageStreamAsync(Guid? userId, Guid? modelId, string message, IEnumerable<Guid>? attachedFileIds = null, Guid? sessionId = null, Guid? ragBucketId = null, IEnumerable<Guid>? selectedToolIds = null, IEnumerable<Guid>? selectedRagBucketIds = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(message) && (attachedFileIds == null || !attachedFileIds.Any()))
+        {
+            yield return new AiChatStreamChunk(null, null, null, true, "Message is required.");
+            yield break;
         }
 
         AiModelDefinition? aiModel = null;
@@ -50,7 +83,7 @@ public class AICenterService
         var allowedTools = (await _toolExecutor.GetAllowedToolsAsync(userId, effectiveToolIds, cancellationToken)).ToList();
         var requestStart = DateTimeOffset.UtcNow;
 
-        var originalMessage = message.Trim();
+        var originalMessage = message?.Trim() ?? string.Empty;
 
         var attachedIds = (attachedFileIds ?? Enumerable.Empty<Guid>())
             .Where(id => id != Guid.Empty)
@@ -110,8 +143,6 @@ public class AICenterService
             maxChunksToScan = 1000;
         }
 
-        // Avoid loading the entire corpus into memory while still scanning enough
-        // chunks for a useful approximate nearest-neighbor ranking.
         var ragChunks = await _db.RagChunks
             .AsNoTracking()
             .Where(x => selectedBucketIds.Contains(x.RagBucketId))
@@ -156,7 +187,8 @@ public class AICenterService
                 var maxMessages = _configuration.GetValue<int?>("Chat:MaxMessagesPerSession") ?? 50;
                 if (existing.Messages.Count >= maxMessages)
                 {
-                    throw new ArgumentException($"This chat has reached the maximum of {maxMessages} messages. Please start a new chat.");
+                    yield return new AiChatStreamChunk(null, null, null, true, $"This chat has reached the maximum of {maxMessages} messages. Please start a new chat.");
+                    yield break;
                 }
                 chatSession = existing;
             }
@@ -209,25 +241,38 @@ public class AICenterService
 
         history.Add(new ChatMessage(ChatRole.User, modelMessage));
 
+        yield return new AiChatStreamChunk(null, chatSession.Id, aiModel.Name, false);
+
         var connector = _factory.GetConnector(aiModel);
         Tools.DatabaseToolExecutor.BeginGeneratedFileTracking();
-        string reply;
-        var generatedFileTokens = new List<string>();
+        var replyBuilder = new StringBuilder();
         try
         {
-            reply = await connector.ChatAsync(aiModel, history, allowedTools, cancellationToken);
+            await foreach (var delta in connector.ChatStreamAsync(aiModel, history, allowedTools, cancellationToken))
+            {
+                if (!string.IsNullOrEmpty(delta))
+                {
+                    replyBuilder.Append(delta);
+                    yield return new AiChatStreamChunk(delta, null, null, false);
+                }
+            }
         }
         finally
         {
-            generatedFileTokens = Tools.DatabaseToolExecutor.GetGeneratedFileTokens().ToList();
-            Tools.DatabaseToolExecutor.ClearGeneratedFileTracking();
+            // no-op placeholder
         }
+
+        var generatedFileTokens = Tools.DatabaseToolExecutor.GetGeneratedFileTokens().ToList();
+        Tools.DatabaseToolExecutor.ClearGeneratedFileTracking();
+
+        var reply = replyBuilder.ToString();
 
         foreach (var token in generatedFileTokens)
         {
-            if (!string.IsNullOrWhiteSpace(token) && !(reply?.Contains(token, StringComparison.Ordinal) ?? false))
+            if (!string.IsNullOrWhiteSpace(token) && !(reply.Contains(token, StringComparison.Ordinal)))
             {
-                reply = (reply?.TrimEnd() ?? string.Empty) + "\n" + token;
+                reply = reply.TrimEnd() + "\n" + token;
+                yield return new AiChatStreamChunk("\n" + token, null, null, false);
             }
         }
 
@@ -240,9 +285,10 @@ public class AICenterService
 
             foreach (var token in dbTokens)
             {
-                if (!(reply?.Contains(token, StringComparison.Ordinal) ?? false))
+                if (!(reply.Contains(token, StringComparison.Ordinal)))
                 {
-                    reply = (reply?.TrimEnd() ?? string.Empty) + "\n" + token;
+                    reply = reply.TrimEnd() + "\n" + token;
+                    yield return new AiChatStreamChunk("\n" + token, null, null, false);
                 }
             }
         }
@@ -271,8 +317,6 @@ public class AICenterService
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        return new AiChatResult(reply, chatSession.Id, aiModel.Name);
+        yield return new AiChatStreamChunk(null, chatSession.Id, aiModel.Name, true);
     }
 }
-
-public record AiChatResult(string Reply, Guid SessionId, string ModelName);

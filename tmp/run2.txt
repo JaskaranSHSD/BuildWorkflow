@@ -1,0 +1,215 @@
+Using launch settings from D:\Claude\BuildWorkflow\Properties\launchSettings.json...
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'ApiToolConfiguration'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'SftpToolConfiguration'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'SqlToolConfiguration'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'AiModelDefinition' has a global query filter defined and is the required end of a relationship with the entity 'UserAiModel'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'RagBucket' has a global query filter defined and is the required end of a relationship with the entity 'UserRagBucket'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'UserToolPermission'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (29ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT CASE WHEN COUNT(*) = 0 THEN FALSE ELSE TRUE END
+FROM pg_class AS cls
+JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+WHERE
+        cls.relkind IN ('r', 'v', 'm', 'f', 'p') AND
+        ns.nspname NOT IN ('pg_catalog', 'information_schema') AND
+        -- Exclude tables which are members of PG extensions
+        NOT EXISTS (
+            SELECT 1 FROM pg_depend WHERE
+                classid=(
+                    SELECT cls.oid
+                    FROM pg_class AS cls
+                             JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+                    WHERE relname='pg_class' AND ns.nspname='pg_catalog'
+                ) AND
+                objid=cls.oid AND
+                deptype IN ('e', 'x')
+        )
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (7ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+          CREATE TABLE IF NOT EXISTS "Organizations" (
+              "Id" uuid NOT NULL PRIMARY KEY,
+              "Name" character varying(128) NOT NULL,
+              "Slug" character varying(128) NULL,
+              "IsActive" boolean NOT NULL DEFAULT TRUE,
+              "CreatedAt" timestamp with time zone NOT NULL
+          );
+          ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "NextWorkflowId" uuid NULL;
+          ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "ParentRunId" uuid NULL;
+          ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "OutputSummary" text NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsTools" boolean NOT NULL DEFAULT TRUE;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsImages" boolean NOT NULL DEFAULT FALSE;
+          CREATE TABLE IF NOT EXISTS "ToolGroups" (
+              "Id" uuid NOT NULL PRIMARY KEY,
+              "Name" character varying(128) NOT NULL,
+              "Description" character varying(1024) NULL,
+              "CreatedAt" timestamp with time zone NOT NULL
+          );
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "ToolGroupId" uuid NULL;
+          CREATE TABLE IF NOT EXISTS "KnowledgeGroups" (
+              "Id" uuid NOT NULL PRIMARY KEY,
+              "Name" character varying(128) NOT NULL,
+              "Description" character varying(1024) NULL,
+              "CreatedAt" timestamp with time zone NOT NULL
+          );
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "KnowledgeGroupId" uuid NULL;
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT o."Id", o."CreatedAt", o."IsActive", o."Name", o."Slug"
+      FROM "Organizations" AS o
+      ORDER BY o."CreatedAt"
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (4ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT u."Id", u."CreatedAt", u."CreatedByUserId", u."Email", u."FullName", u."OrganizationId", u."Password", u."Role", u."UpdatedByUserId", u."Username"
+      FROM "Users" AS u
+      WHERE (@__ef_filter__p_1 OR u."OrganizationId" IS NULL) AND u."OrganizationId" IS NULL
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Users" AS u
+          WHERE @__ef_filter__p_1 OR u."OrganizationId" IS NULL)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Users" AS u
+          WHERE (@__ef_filter__p_1 OR u."OrganizationId" IS NULL) AND u."Role" = 'PlatformAdmin')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT u."Id", u."CreatedAt", u."CreatedByUserId", u."Email", u."FullName", u."OrganizationId", u."Password", u."Role", u."UpdatedByUserId", u."Username"
+      FROM "Users" AS u
+      WHERE (@__ef_filter__p_1 OR u."OrganizationId" IS NULL) AND u."Role" IN ('OrgAdmin', 'Admin')
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CreatedByUserId", w."IsActive", w."ModelId", w."Name", w."NextWorkflowId", w."OrganizationId", w."RagBucketId", w."SystemInstruction", w."UpdatedAt", w."UpdatedByUserId", w."UserId", w."UserInstruction"
+      FROM "Workflows" AS w
+      WHERE (@__ef_filter__p_1 OR w."OrganizationId" IS NULL) AND w."Name" LIKE 'Sample Chain%' AND w."UserId" IS NULL
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Workflows" AS w
+          WHERE (@__ef_filter__p_1 OR w."OrganizationId" IS NULL) AND w."Name" = 'Sample Chain A - Summarize')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "AiModels" AS a
+          WHERE @__ef_filter__p_1 OR a."OrganizationId" IS NULL)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Tools" AS t
+          WHERE (@__ef_filter__p_1 OR t."OrganizationId" IS NULL) AND t."Name" = 'Test Api GET Sample')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Tools" AS t
+          WHERE (@__ef_filter__p_1 OR t."OrganizationId" IS NULL) AND t."Name" = 'Test Api POST Sample')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (7ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id"
+      FROM "WorkflowRuns" AS w
+      WHERE w."Status" = 'Queued'
+fail: Microsoft.Extensions.Hosting.Internal.Host[11]
+      Hosting failed to start
+      System.IO.IOException: Failed to bind to address http://127.0.0.1:5014: address already in use.
+       ---> Microsoft.AspNetCore.Connections.AddressInUseException: Only one usage of each socket address (protocol/network address/port) is normally permitted.
+       ---> System.Net.Sockets.SocketException (10048): Only one usage of each socket address (protocol/network address/port) is normally permitted.
+         at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, Boolean disconnectOnFailure, String callerName)
+         at System.Net.Sockets.Socket.DoBind(EndPoint endPointSnapshot, SocketAddress socketAddress)
+         at System.Net.Sockets.Socket.Bind(EndPoint localEP)
+         at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions.CreateDefaultBoundListenSocket(EndPoint endpoint)
+         at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+         --- End of inner exception stack trace ---
+         at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionListener.Bind()
+         at Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportFactory.BindAsync(EndPoint endpoint, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure.TransportManager.BindAsync(EndPoint endPoint, ConnectionDelegate connectionDelegate, EndpointConfig endpointConfig, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.<>c__DisplayClass28_0`1.<<StartAsync>g__OnBind|0>d.MoveNext()
+      --- End of stack trace from previous location ---
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+         --- End of inner exception stack trace ---
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.BindEndpointAsync(ListenOptions endpoint, AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.LocalhostListenOptions.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.Internal.AddressBinder.AddressesStrategy.BindAsync(AddressBindContext context, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.BindAsync(CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl.StartAsync[TContext](IHttpApplication`1 application, CancellationToken cancellationToken)
+         at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+         at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__14_1(IHostedService service, CancellationToken token)
+         at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+fail: BuildWorkflow.Services.WorkflowBackgroundService[0]
+      Scheduler error
+      System.ObjectDisposedException: Cannot access a disposed object.
+      Object name: 'IServiceProvider'.
+         at Microsoft.Extensions.DependencyInjection.ServiceLookup.ThrowHelper.ThrowObjectDisposedException()
+         at Microsoft.Extensions.DependencyInjection.ServiceProvider.CreateScope()
+         at BuildWorkflow.Services.WorkflowBackgroundService.<>c__DisplayClass5_0.<<ExecuteAsync>b__1>d.MoveNext() in D:\Claude\BuildWorkflow\Services\WorkflowBackgroundService.cs:line 48
+fail: Microsoft.Extensions.Hosting.Internal.Host[9]
+      BackgroundService failed
+      System.AggregateException: An error occurred while writing to logger(s). (Cannot access a disposed object.
+      Object name: 'EventLogInternal'.)
+       ---> System.ObjectDisposedException: Cannot access a disposed object.
+      Object name: 'EventLogInternal'.
+         at System.Diagnostics.EventLogInternal.OpenForWrite(String currentMachineName)
+         at System.Diagnostics.EventLogInternal.InternalWriteEvent(UInt32 eventID, UInt16 category, EventLogEntryType type, String[] strings, Byte[] rawData, String currentMachineName)
+         at System.Diagnostics.EventLogInternal.WriteEvent(EventInstance instance, Byte[] data, Object[] values)
+         at Microsoft.Extensions.Logging.EventLog.WindowsEventLog.WriteEntry(String message, EventLogEntryType type, Int32 eventID, Int16 category)
+         at Microsoft.Extensions.Logging.EventLog.EventLogLogger.WriteMessage(String message, EventLogEntryType eventLogEntryType, Int32 eventId)
+         at Microsoft.Extensions.Logging.EventLog.EventLogLogger.Log[TState](LogLevel logLevel, EventId eventId, TState state, Exception exception, Func`3 formatter)
+         at Microsoft.Extensions.Logging.Logger.<Log>g__LoggerLog|14_0[TState](LogLevel logLevel, EventId eventId, ILogger logger, Exception exception, Func`3 formatter, List`1& exceptions, TState& state)
+         --- End of inner exception stack trace ---
+         at Microsoft.Extensions.Logging.Logger.ThrowLoggingError(List`1 exceptions)
+         at Microsoft.Extensions.Logging.Logger.Log[TState](LogLevel logLevel, EventId eventId, TState state, Exception exception, Func`3 formatter)
+         at Microsoft.Extensions.Logging.LoggerExtensions.Log(ILogger logger, LogLevel logLevel, EventId eventId, Exception exception, String message, Object[] args)
+         at Microsoft.Extensions.Logging.LoggerExtensions.LogError(ILogger logger, Exception exception, String message, Object[] args)
+         at BuildWorkflow.Services.WorkflowBackgroundService.<>c__DisplayClass5_0.<<ExecuteAsync>b__1>d.MoveNext() in D:\Claude\BuildWorkflow\Services\WorkflowBackgroundService.cs:line 77
+      --- End of stack trace from previous location ---
+         at BuildWorkflow.Services.WorkflowBackgroundService.ExecuteAsync(CancellationToken stoppingToken) in D:\Claude\BuildWorkflow\Services\WorkflowBackgroundService.cs:line 82
+         at Microsoft.Extensions.Hosting.Internal.Host.TryExecuteBackgroundServiceAsync(BackgroundService backgroundService)

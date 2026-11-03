@@ -1,0 +1,198 @@
+Using launch settings from D:\Claude\BuildWorkflow\Properties\launchSettings.json...
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'ApiToolConfiguration'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'SftpToolConfiguration'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'SqlToolConfiguration'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'AiModelDefinition' has a global query filter defined and is the required end of a relationship with the entity 'UserAiModel'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'RagBucket' has a global query filter defined and is the required end of a relationship with the entity 'UserRagBucket'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'ToolDefinition' has a global query filter defined and is the required end of a relationship with the entity 'UserToolPermission'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (32ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT CASE WHEN COUNT(*) = 0 THEN FALSE ELSE TRUE END
+FROM pg_class AS cls
+JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+WHERE
+        cls.relkind IN ('r', 'v', 'm', 'f', 'p') AND
+        ns.nspname NOT IN ('pg_catalog', 'information_schema') AND
+        -- Exclude tables which are members of PG extensions
+        NOT EXISTS (
+            SELECT 1 FROM pg_depend WHERE
+                classid=(
+                    SELECT cls.oid
+                    FROM pg_class AS cls
+                             JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+                    WHERE relname='pg_class' AND ns.nspname='pg_catalog'
+                ) AND
+                objid=cls.oid AND
+                deptype IN ('e', 'x')
+        )
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (6ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+          CREATE TABLE IF NOT EXISTS "Organizations" (
+              "Id" uuid NOT NULL PRIMARY KEY,
+              "Name" character varying(128) NOT NULL,
+              "Slug" character varying(128) NULL,
+              "IsActive" boolean NOT NULL DEFAULT TRUE,
+              "CreatedAt" timestamp with time zone NOT NULL
+          );
+          ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+          ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
+          ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
+          ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "NextWorkflowId" uuid NULL;
+          ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "ParentRunId" uuid NULL;
+          ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "OutputSummary" text NULL;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsTools" boolean NOT NULL DEFAULT TRUE;
+          ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsImages" boolean NOT NULL DEFAULT FALSE;
+          CREATE TABLE IF NOT EXISTS "ToolGroups" (
+              "Id" uuid NOT NULL PRIMARY KEY,
+              "Name" character varying(128) NOT NULL,
+              "Description" character varying(1024) NULL,
+              "CreatedAt" timestamp with time zone NOT NULL
+          );
+          ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "ToolGroupId" uuid NULL;
+          CREATE TABLE IF NOT EXISTS "KnowledgeGroups" (
+              "Id" uuid NOT NULL PRIMARY KEY,
+              "Name" character varying(128) NOT NULL,
+              "Description" character varying(1024) NULL,
+              "CreatedAt" timestamp with time zone NOT NULL
+          );
+          ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "KnowledgeGroupId" uuid NULL;
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT o."Id", o."CreatedAt", o."IsActive", o."Name", o."Slug"
+      FROM "Organizations" AS o
+      ORDER BY o."CreatedAt"
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (5ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT u."Id", u."CreatedAt", u."CreatedByUserId", u."Email", u."FullName", u."OrganizationId", u."Password", u."Role", u."UpdatedByUserId", u."Username"
+      FROM "Users" AS u
+      WHERE (@__ef_filter__p_1 OR u."OrganizationId" IS NULL) AND u."OrganizationId" IS NULL
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Users" AS u
+          WHERE @__ef_filter__p_1 OR u."OrganizationId" IS NULL)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Users" AS u
+          WHERE (@__ef_filter__p_1 OR u."OrganizationId" IS NULL) AND u."Role" = 'PlatformAdmin')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT u."Id", u."CreatedAt", u."CreatedByUserId", u."Email", u."FullName", u."OrganizationId", u."Password", u."Role", u."UpdatedByUserId", u."Username"
+      FROM "Users" AS u
+      WHERE (@__ef_filter__p_1 OR u."OrganizationId" IS NULL) AND u."Role" IN ('OrgAdmin', 'Admin')
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CreatedByUserId", w."IsActive", w."ModelId", w."Name", w."NextWorkflowId", w."OrganizationId", w."RagBucketId", w."SystemInstruction", w."UpdatedAt", w."UpdatedByUserId", w."UserId", w."UserInstruction"
+      FROM "Workflows" AS w
+      WHERE (@__ef_filter__p_1 OR w."OrganizationId" IS NULL) AND w."Name" LIKE 'Sample Chain%' AND w."UserId" IS NULL
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Workflows" AS w
+          WHERE (@__ef_filter__p_1 OR w."OrganizationId" IS NULL) AND w."Name" = 'Sample Chain A - Summarize')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "AiModels" AS a
+          WHERE @__ef_filter__p_1 OR a."OrganizationId" IS NULL)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Tools" AS t
+          WHERE (@__ef_filter__p_1 OR t."OrganizationId" IS NULL) AND t."Name" = 'Test Api GET Sample')
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__ef_filter__p_1='?' (DbType = Boolean)], CommandType='Text', CommandTimeout='30']
+      SELECT EXISTS (
+          SELECT 1
+          FROM "Tools" AS t
+          WHERE (@__ef_filter__p_1 OR t."OrganizationId" IS NULL) AND t."Name" = 'Test Api POST Sample')
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5105
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: D:\Claude\BuildWorkflow
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (8ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id"
+      FROM "WorkflowRuns" AS w
+      WHERE w."Status" = 'Queued'
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (2ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CronExpression", w."Enabled", w."IntervalMinutes", w."LastRunAt", w."NextRunAt", w."RunAt", w."UserId", w."WorkflowId"
+      FROM "WorkflowSchedules" AS w
+      WHERE w."Enabled" AND w."NextRunAt" IS NOT NULL AND w."NextRunAt" <= @__now_0
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CronExpression", w."Enabled", w."IntervalMinutes", w."LastRunAt", w."NextRunAt", w."RunAt", w."UserId", w."WorkflowId"
+      FROM "WorkflowSchedules" AS w
+      WHERE w."Enabled" AND w."NextRunAt" IS NOT NULL AND w."NextRunAt" <= @__now_0
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CronExpression", w."Enabled", w."IntervalMinutes", w."LastRunAt", w."NextRunAt", w."RunAt", w."UserId", w."WorkflowId"
+      FROM "WorkflowSchedules" AS w
+      WHERE w."Enabled" AND w."NextRunAt" IS NOT NULL AND w."NextRunAt" <= @__now_0
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (2ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CronExpression", w."Enabled", w."IntervalMinutes", w."LastRunAt", w."NextRunAt", w."RunAt", w."UserId", w."WorkflowId"
+      FROM "WorkflowSchedules" AS w
+      WHERE w."Enabled" AND w."NextRunAt" IS NOT NULL AND w."NextRunAt" <= @__now_0
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CronExpression", w."Enabled", w."IntervalMinutes", w."LastRunAt", w."NextRunAt", w."RunAt", w."UserId", w."WorkflowId"
+      FROM "WorkflowSchedules" AS w
+      WHERE w."Enabled" AND w."NextRunAt" IS NOT NULL AND w."NextRunAt" <= @__now_0
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT w."Id", w."CreatedAt", w."CronExpression", w."Enabled", w."IntervalMinutes", w."LastRunAt", w."NextRunAt", w."RunAt", w."UserId", w."WorkflowId"
+      FROM "WorkflowSchedules" AS w
+      WHERE w."Enabled" AND w."NextRunAt" IS NOT NULL AND w."NextRunAt" <= @__now_0
