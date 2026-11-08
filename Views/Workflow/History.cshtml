@@ -3,29 +3,29 @@
     ViewData["Title"] = "Workflow History";
 }
 <style>
-    .run-card { transition: border-color .2s ease, box-shadow .2s ease; }
-    .run-card.run-queued { border-left: 4px solid #6c757d; }
-    .run-card.run-running { border-left: 4px solid #0d6efd; box-shadow: 0 0 0 .1rem rgba(13,110,253,.18); }
-    .run-card.run-completed { border-left: 4px solid #198754; }
-    .run-card.run-failed { border-left: 4px solid #dc3545; }
+    .run-card { border-left: 4px solid #dee2e6; transition: box-shadow .15s ease, transform .15s ease; }
+    .run-card.run-queued { border-left-color: #6c757d; }
+    .run-card.run-running { border-left-color: #0d6efd; box-shadow: 0 0 0 .1rem rgba(13,110,253,.15); }
+    .run-card.run-completed { border-left-color: #198754; }
+    .run-card.run-failed { border-left-color: #dc3545; }
+    .run-meta { font-size: .85rem; }
+    .run-meta dt { color: #6c757d; font-weight: 500; }
+    .run-meta dd { margin-bottom: .35rem; }
     .message-item { border-radius: .75rem; padding: .75rem; margin-bottom: .6rem; }
     .message-user { background: #e7f1ff; border: 1px solid #b6d4fe; }
     .message-assistant { background: #eaf6ee; border: 1px solid #b7e4c7; }
     .message-other { background: #f8f9fa; border: 1px solid #dee2e6; }
     .status-pill { font-size: .75rem; letter-spacing: .02em; }
-    .timeline { position: relative; padding-left: 2rem; }
-    .timeline::before { content: ''; position: absolute; left: .75rem; top: .5rem; bottom: .5rem; width: 2px; background: #dee2e6; }
-    .timeline-item { position: relative; margin-bottom: 1.5rem; }
-    .timeline-dot { position: absolute; left: -1.65rem; top: 1.2rem; width: .85rem; height: .85rem; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px #dee2e6; z-index: 1; }
+    .empty-state { border: 1px dashed #dee2e6; border-radius: .75rem; }
 </style>
-<div class="container-fluid">
+<div class="container-fluid py-2">
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
         <div>
             <h2 class="mb-0">Workflow Run History</h2>
             <p class="text-muted small mb-0" id="workflowSubtitle">Loading workflow details...</p>
             <div class="small text-muted mt-1" id="workflowMeta"></div>
         </div>
-        <a href="/Workflow" class="btn btn-secondary btn-sm">Back to Workflows</a>
+        <a href="/Workflow" class="btn btn-outline-secondary btn-sm">Back to Workflows</a>
     </div>
 
     <div id="workflowDetails" class="card border-primary mb-4 shadow-sm">
@@ -47,16 +47,42 @@
         </div>
     </div>
 
-    <div id="historyContent" class="timeline"></div>
+    <div id="historyContent"></div>
+</div>
+
+<!-- Run details modal -->
+<div class="modal fade" id="runDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="runDetailTitle">Run details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="runDetailBody">
+                <div class="text-center text-muted py-4">Loading...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
 const workflowId = '@workflowId';
 let historyTimer = null;
+const runsById = new Map();
+let runsPage = 1;
+const runsPageSize = 50;
 
 async function api(path) {
     const response = await fetch(path);
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) {
+        const text = await response.text();
+        const error = new Error(text || response.statusText);
+        error.status = response.status;
+        throw error;
+    }
     return response;
 }
 
@@ -107,30 +133,27 @@ function runStatusClass(status) {
     return 'run-' + (['queued', 'running', 'completed', 'failed'].includes(normalized) ? normalized : 'queued');
 }
 
-function runStatusColor(status) {
-    const normalized = (status || '').toLowerCase();
-    const colors = {
-        queued: 'background:#6c757d;',
-        running: 'background:#0d6efd;',
-        completed: 'background:#198754;',
-        failed: 'background:#dc3545;'
-    };
-    return (colors[normalized] || colors.queued);
-}
-
-function renderMessage(message) {
+function renderMessage(message, stepMap) {
     let role = (message.role || 'assistant').toLowerCase();
     let roleClass = 'message-other';
     if (role === 'user') roleClass = 'message-user';
     if (role === 'assistant') roleClass = 'message-assistant';
+    const roleLabel = role === 'user' ? 'Workflow Context Request'
+        : role === 'assistant' ? 'Assistant Response'
+        : (message.role || 'assistant');
+    let stepBadge = '';
+    if (message.stepId && stepMap && stepMap.has(String(message.stepId))) {
+        const stepInfo = stepMap.get(String(message.stepId));
+        stepBadge = '<span class="badge text-bg-info me-2">Step ' + htmlEscape(stepInfo.order) + ': ' + htmlEscape(stepInfo.name || '') + '</span>';
+    }
     let text = htmlEscape(message.content || '');
     text = text.replace(/file:([0-9a-fA-F-]{36})/g, function(match, fileId) {
         return '<a class="btn btn-sm btn-outline-success ms-2" href="/api/files/' + fileId + '/download">Download file</a>';
     });
     return '<div class="message-item ' + roleClass + '">' +
-        '<div class="d-flex justify-content-between align-items-center mb-1">' +
-            '<span class="fw-semibold text-capitalize">' + htmlEscape(message.role || 'assistant') + '</span>' +
-            '<small class="text-muted">' + formatDate(message.createdAt) + '</small>' +
+        '<div class="d-flex justify-content-between align-items-start mb-2">' +
+            '<div>' + stepBadge + '<span class="fw-semibold">' + htmlEscape(roleLabel) + '</span></div>' +
+            '<small class="text-muted ms-2">' + formatDate(message.createdAt) + '</small>' +
         '</div>' +
         '<div class="text-break">' + text + '</div>' +
     '</div>';
@@ -141,203 +164,164 @@ async function loadWorkflowDetails() {
         const response = await api('/api/workflow/' + workflowId);
         const data = await response.json();
         document.getElementById('workflowName').textContent = data.name || 'Workflow';
-        document.getElementById('workflowSubtitle').textContent = 'Run history, status, timing, messages and generated files.';
+        document.getElementById('workflowSubtitle').textContent = 'Execution history and generated messages.';
         document.getElementById('workflowUser').textContent = data.userInstruction || '-';
         document.getElementById('workflowSystem').textContent = data.systemInstruction || '-';
-        const modelText = data.modelName || 'default';
-        let metaText =
-            'Tools: ' + (Array.isArray(data.tools) ? data.tools.length : 0) +
-            ' · RAG buckets: ' + (Array.isArray(data.ragBuckets) ? data.ragBuckets.length : 0) +
-            ' · Attached files: ' + (Array.isArray(data.files) ? data.files.length : 0) +
-            ' · Model: ' + modelText;
 
-        let scheduleText = 'No schedule configured.';
-        try {
-            const scheduleResponse = await api('/api/workflow/' + workflowId + '/schedules');
-            const schedules = await scheduleResponse.json();
-            if (Array.isArray(schedules) && schedules.length > 0) {
-                const nextRunTimes = schedules
-                    .filter(function(s) { return s.enabled && s.nextRunAt; })
-                    .map(function(s) { return s.nextRunAt; })
-                    .sort();
-                if (nextRunTimes.length > 0) {
-                    scheduleText = 'Next scheduled run: ' + formatDate(nextRunTimes[0]);
-                } else {
-                    scheduleText = 'Scheduled item found, but no upcoming run time is available.';
+        const scheduleTextPromise = (async () => {
+            try {
+                const schedules = await (await api('/api/workflow/' + workflowId + '/schedules')).json();
+                if (Array.isArray(schedules) && schedules.length > 0) {
+                    const next = schedules.filter(s => s.enabled && s.nextRunAt).map(s => s.nextRunAt).sort()[0];
+                    return next ? 'Next: ' + formatDate(next) : 'Scheduled';
                 }
+                return 'Not scheduled';
+            } catch {
+                return 'Schedule unavailable';
             }
-        } catch (error) {
-            scheduleText = 'Schedule information could not be loaded.';
-        }
+        })();
 
-        const badge = function(label, value, cssClass) {
-            return '<span class="badge ' + cssClass + ' me-1 mb-1">' + htmlEscape(label) + ': ' + htmlEscape(value) + '</span>';
-        };
+        const scheduleText = await scheduleTextPromise;
+        const badge = (label, value, css) =>
+            '<span class="badge ' + css + ' me-1 mb-1">' + htmlEscape(label) + ': ' + htmlEscape(value) + '</span>';
 
         document.getElementById('workflowMeta').innerHTML =
-            badge('Tools', Array.isArray(data.tools) ? data.tools.length : 0, 'text-bg-light border') +
-            badge('RAG buckets', Array.isArray(data.ragBuckets) ? data.ragBuckets.length : 0, 'text-bg-light border') +
-            badge('Attached files', Array.isArray(data.files) ? data.files.length : 0, 'text-bg-light border') +
-            badge('Model', modelText, 'text-bg-primary') +
-            badge('Next run', scheduleText.replace('Next scheduled run: ', '').replace('No schedule configured.', 'Not scheduled'), scheduleText.startsWith('Next') ? 'text-bg-success' : 'text-bg-secondary');
+            badge('Schedule', scheduleText, scheduleText.startsWith('Next') ? 'text-bg-success' : 'text-bg-secondary');
     } catch (error) {
         document.getElementById('workflowName').textContent = 'Workflow';
         document.getElementById('workflowSubtitle').textContent = 'Could not load workflow details.';
     }
 }
 
-async function showHistory() {
-    try {
-    if (historyTimer) {
-        clearTimeout(historyTimer);
-        historyTimer = null;
+function renderRunCard(run) {
+    runsById.set(String(run.id), run);
+    return '<div class="card run-card ' + runStatusClass(run.status) + ' mb-3 shadow-sm">' +
+        '  <div class="card-body">' +
+        '    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">' +
+        '      <div>' +
+        '        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">' +
+        '          ' + statusBadge(run.status) +
+        '          <span class="fw-semibold">Run ' + htmlEscape(String(run.id).substring(0, 8)) + '</span>' +
+        '        </div>' +
+        '        <small class="text-muted d-block">ID: ' + htmlEscape(run.id) + '</small>' +
+        '      </div>' +
+        '      <div class="text-end small run-meta">' +
+        '        <div><strong>Duration:</strong> ' + duration(run.startedAt, run.completedAt) + '</div>' +
+        '        <div><strong>Model:</strong> ' + htmlEscape(run.modelId || 'default') + '</div>' +
+        '      </div>' +
+        '    </div>' +
+        '    <dl class="row run-meta mb-2">' +
+        '      <dt class="col-sm-3">Created</dt><dd class="col-sm-9">' + formatDate(run.createdAt) + '</dd>' +
+        '      <dt class="col-sm-3">Started</dt><dd class="col-sm-9">' + formatDate(run.startedAt) + '</dd>' +
+        '      <dt class="col-sm-3">Completed</dt><dd class="col-sm-9">' + formatDate(run.completedAt) + '</dd>' +
+        '      <dt class="col-sm-3">Session</dt><dd class="col-sm-9">' + htmlEscape(run.sessionId || '-') + '</dd>' +
+        '    </dl>' +
+        (run.error ? '    <div class="alert alert-danger small mb-2"><strong>Error:</strong> ' + htmlEscape(run.error) + '</div>' : '') +
+        '    <div class="d-flex justify-content-end">' +
+        '      <button class="btn btn-sm btn-outline-primary" onclick="openRunDetails(\'' + run.id + '\')">View details & log</button>' +
+        '    </div>' +
+        '  </div>' +
+        '</div>';
+}
+
+async function openRunDetails(runId) {
+    const modal = new bootstrap.Modal(document.getElementById('runDetailModal'));
+    const title = document.getElementById('runDetailTitle');
+    const body = document.getElementById('runDetailBody');
+
+    const run = runsById.get(String(runId));
+    title.textContent = 'Run ' + String(runId).substring(0, 8) + ' details';
+    body.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading execution log...</div>';
+    modal.show();
+
+    let runHtml = '';
+    if (run) {
+        runHtml = '<dl class="row small mb-3">' +
+            '<dt class="col-sm-3">Status</dt><dd class="col-sm-9">' + statusBadge(run.status) + '</dd>' +
+            '<dt class="col-sm-3">Run ID</dt><dd class="col-sm-9 text-break">' + htmlEscape(run.id) + '</dd>' +
+            '<dt class="col-sm-3">Created</dt><dd class="col-sm-9">' + formatDate(run.createdAt) + '</dd>' +
+            '<dt class="col-sm-3">Started</dt><dd class="col-sm-9">' + formatDate(run.startedAt) + '</dd>' +
+            '<dt class="col-sm-3">Completed</dt><dd class="col-sm-9">' + formatDate(run.completedAt) + '</dd>' +
+            '<dt class="col-sm-3">Duration</dt><dd class="col-sm-9">' + duration(run.startedAt, run.completedAt) + '</dd>' +
+            '<dt class="col-sm-3">Model</dt><dd class="col-sm-9">' + htmlEscape(run.modelId || 'default') + '</dd>' +
+            '<dt class="col-sm-3">Session</dt><dd class="col-sm-9">' + htmlEscape(run.sessionId || '-') + '</dd>' +
+            '</dl>' +
+            (run.error ? '<div class="alert alert-danger small"><strong>Error:</strong> ' + htmlEscape(run.error) + '</div>' : '');
     }
 
-    let runs = [];
-    let chain = [];
+    const stepMap = new Map();
+    let stepsHtml = '';
     try {
-        const workflowsResponse = await api('/api/workflow');
-        const workflows = await workflowsResponse.json();
-        const byId = new Map((Array.isArray(workflows) ? workflows : []).map(w => [w.id, w]));
-        const parentOf = {};
-        for (const w of (Array.isArray(workflows) ? workflows : [])) {
-            if (w.nextWorkflowId) parentOf[w.nextWorkflowId] = w.id;
+        const stepsResponse = await api('/api/workflow/runs/' + runId + '/steps');
+        const steps = await stepsResponse.json();
+        if (Array.isArray(steps)) {
+            steps.forEach(step => stepMap.set(String(step.id), { order: step.order, name: step.stepName, status: step.status }));
+            stepsHtml = '<h6 class="mt-3">Steps executed</h6><div class="list-group mb-3">' +
+                steps.map(step =>
+                    '<div class="list-group-item d-flex justify-content-between align-items-center">' +
+                        '<div><span class="badge text-bg-secondary me-2">Step ' + htmlEscape(step.order) + '</span>' + htmlEscape(step.stepName || 'Unnamed step') + '</div>' +
+                        '<span class="badge ' + (step.status === 'Completed' ? 'text-bg-success' : step.status === 'Failed' ? 'text-bg-danger' : 'text-bg-secondary') + '">' + htmlEscape(step.status || 'Unknown') + '</span>' +
+                    '</div>'
+                ).join('') + '</div>';
         }
-
-        let rootId = workflowId;
-        while (parentOf[rootId]) rootId = parentOf[rootId];
-
-        chain = [];
-        const visited = new Set();
-        let currentId = rootId;
-        while (currentId && byId.has(currentId) && !visited.has(currentId)) {
-            visited.add(currentId);
-            chain.push(byId.get(currentId));
-            currentId = byId.get(currentId).nextWorkflowId;
-        }
-
-        const workflowIds = chain.length ? chain.map(w => w.id) : [workflowId];
-        const stepByWorkflow = new Map(chain.map((workflow, index) => [workflow.id, index + 1]));
-        for (const id of workflowIds) {
-            const response = await api('/api/workflow/' + id + '/runs?page=1&pageSize=50');
-            const pageRuns = await response.json();
-            if (Array.isArray(pageRuns)) {
-                pageRuns.forEach(run => {
-                    run.workflowId = id;
-                    run.workflowName = byId.has(id) ? byId.get(id).name : id;
-                    run.workflowStep = stepByWorkflow.get(id) || 1;
-                    run.chainLength = chain.length || 1;
-                });
-                runs.push(...pageRuns);
-            }
-        }
-
-        const runById = new Map(runs.map(run => [String(run.id), run]));
-        function findRootRun(run, seen = new Set()) {
-            let current = run;
-            while (current && current.parentRunId && runById.has(String(current.parentRunId)) && !seen.has(String(current.id))) {
-                seen.add(String(current.id));
-                current = runById.get(String(current.parentRunId));
-            }
-            return current ? current.id : run.id;
-        }
-        runs.forEach(run => { run.rootRunId = findRootRun(run); });
-        runs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     } catch (error) {
+        // If step metadata is unavailable, continue with the execution log.
+    }
+
+    try {
+        const response = await api('/api/workflow/runs/' + runId + '/messages');
+        const messages = await response.json();
+        let messagesHtml = '';
+        if (Array.isArray(messages) && messages.length > 0) {
+            messagesHtml = messages.map(message => renderMessage(message, stepMap)).join('');
+        } else {
+            messagesHtml = '<div class="text-muted small fst-italic">No messages recorded for this run.</div>';
+        }
+        body.innerHTML = runHtml + stepsHtml + '<h6 class="mt-3">Execution log</h6>' + messagesHtml;
+    } catch (error) {
+        let message = 'Execution log could not be loaded.';
+        if (error.status === 401 || error.status === 403 || error.status === 404) {
+            message = 'You are not allowed to view this execution log.';
+        }
+        body.innerHTML = runHtml + stepsHtml + '<div class="alert alert-warning small mb-0">' + htmlEscape(message) + '</div>';
+    }
+}
+
+async function loadRuns(page) {
+    runsPage = page || runsPage || 1;
+    try {
+        if (historyTimer) {
+            clearTimeout(historyTimer);
+            historyTimer = null;
+        }
+
+        const response = await api('/api/workflow/' + workflowId + '/runs?page=' + runsPage + '&pageSize=' + runsPageSize);
+        const pageRuns = await response.json();
+        const runs = Array.isArray(pageRuns) ? pageRuns : [];
+        runs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        const totalCount = parseInt(response.headers.get('X-Total-Count') || String(runs.length), 10) || runs.length;
+        const totalPages = Math.max(1, Math.ceil(totalCount / runsPageSize));
+
+        if (runs.length === 0) {
+            document.getElementById('historyContent').innerHTML =
+                '<div class="empty-state p-4 text-center text-muted">No workflow runs yet. Start one from the Workflows page.</div>' +
+                renderRunsPagination(totalCount, totalPages, runsPage);
+            return;
+        }
+
         document.getElementById('historyContent').innerHTML =
-            '<div class="alert alert-danger">Failed to load runs: ' + htmlEscape(error.message) + '</div>';
-        historyTimer = setTimeout(showHistory, 4000);
-        return;
-    }
+            '<div class="d-flex justify-content-between align-items-center mb-2 small text-muted">' +
+                '<span>Total records: ' + htmlEscape(totalCount) + '</span>' +
+                '<span>Page ' + htmlEscape(runsPage) + ' of ' + htmlEscape(totalPages) + '</span>' +
+            '</div>' +
+            runs.map(renderRunCard).join('') +
+            renderRunsPagination(totalCount, totalPages, runsPage);
 
-    if (!Array.isArray(runs) || runs.length === 0) {
-        document.getElementById('historyContent').innerHTML =
-            '<div class="card p-4 text-center text-muted">No workflow runs yet. Start one from the Workflows page.</div>';
-        return;
-    }
-
-    let html = '';
-
-    async function renderRunCard(run, isMain) {
-        let cardHtml = '';
-        cardHtml += '<div class="timeline-item ' + runStatusClass(run.status) + '">';
-        cardHtml += '<span class="timeline-dot" style="' + runStatusColor(run.status) + '"></span>';
-        cardHtml += '<div class="card run-card ' + runStatusClass(run.status) + ' mb-4 shadow-sm">';
-        cardHtml += '  <div class="card-body">';
-        cardHtml += '    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">';
-        cardHtml += '      <div>';
-        cardHtml += '        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">';
-        cardHtml += '          ' + statusBadge(run.status);
-        cardHtml += '          <span class="badge ' + (isMain ? 'text-bg-primary' : 'text-bg-secondary') + '">' + htmlEscape(run.workflowName || 'Workflow') + '</span>';
-        if (!isMain) cardHtml += '          <span class="badge text-bg-light border">Dependent workflow</span>';
-        cardHtml += '          <span class="badge text-bg-light border">Step ' + (run.workflowStep || 1) + ' of ' + (run.chainLength || 1) + '</span>';
-        cardHtml += '        </div>';
-        cardHtml += '        <div class="fw-semibold">Run ' + htmlEscape(String(run.id).substring(0, 8)) + '</div>';
-        cardHtml += '        <small class="text-muted d-block mt-1">Run ID: ' + htmlEscape(run.id) + '</small>';
-        if ((run.chainLength || 1) > 1) {
-            cardHtml += '        <div class="mt-2"><a class="btn btn-sm btn-outline-primary" href="/Workflow/ChainGraph?runId=' + encodeURIComponent(run.id) + '&workflowId=' + encodeURIComponent(run.workflowId) + '">View chain graph</a></div>';
+        const hasActive = runs.some(run => run.status === 'Queued' || run.status === 'Running');
+        if (hasActive) {
+            historyTimer = setTimeout(() => loadRuns(runsPage), 3000);
         }
-        cardHtml += '      </div>';
-        cardHtml += '      <div class="text-end small">';
-        cardHtml += '        <div><b>Duration:</b> ' + duration(run.startedAt, run.completedAt) + '</div>';
-        cardHtml += '        <div><b>Model:</b> ' + htmlEscape(run.modelId || 'default') + '</div>';
-        cardHtml += '        <div><b>Session:</b> ' + htmlEscape(run.sessionId || '-') + '</div>';
-        cardHtml += '      </div>';
-        cardHtml += '    </div>';
-
-        cardHtml += '    <div class="row g-3 small mb-3">';
-        cardHtml += '      <div class="col-md-4"><div class="text-muted">Created</div><div>' + formatDate(run.createdAt) + '</div></div>';
-        cardHtml += '      <div class="col-md-4"><div class="text-muted">Started</div><div>' + formatDate(run.startedAt) + '</div></div>';
-        cardHtml += '      <div class="col-md-4"><div class="text-muted">Completed</div><div>' + formatDate(run.completedAt) + '</div></div>';
-        cardHtml += '    </div>';
-
-        if (run.error) {
-            cardHtml += '    <div class="alert alert-danger small mb-3"><b>Error:</b> ' + htmlEscape(run.error) + '</div>';
-        }
-
-        try {
-            const messageResponse = await api('/api/workflow/runs/' + run.id + '/messages');
-            const messages = await messageResponse.json();
-            if (Array.isArray(messages) && messages.length > 0) {
-                cardHtml += '    <div class="mt-2">';
-                for (const message of messages) {
-                    cardHtml += renderMessage(message);
-                }
-                cardHtml += '    </div>';
-            } else {
-                cardHtml += '    <div class="text-muted small fst-italic">No messages recorded for this run yet.</div>';
-            }
-        } catch (error) {
-            cardHtml += '    <div class="alert alert-warning small mb-0">Failed to load messages: ' + htmlEscape(error.message) + '</div>';
-        }
-        cardHtml += '  </div>';
-        cardHtml += '</div>';
-        cardHtml += '</div>';
-        return cardHtml;
-    }
-
-    const displayRuns = runs
-        .filter(run => String(run.workflowId) === String(workflowId))
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    html += '<div class="timeline mb-4">';
-    if (displayRuns.length === 0) {
-        html += '<div class="card p-4 text-center text-muted">No runs for this workflow yet.</div>';
-    } else {
-        for (const run of displayRuns) {
-            html += await renderRunCard(run, true);
-        }
-    }
-    html += '</div>';
-
-    document.getElementById('historyContent').innerHTML = html;
-
-    const hasActive = runs.some(function(run) {
-        return run.status === 'Queued' || run.status === 'Running';
-    });
-    if (hasActive) {
-        historyTimer = setTimeout(showHistory, 3000);
-    }
     } catch (error) {
         console.error(error);
         document.getElementById('historyContent').innerHTML =
@@ -345,8 +329,25 @@ async function showHistory() {
     }
 }
 
+function renderRunsPagination(totalCount, totalPages, currentPage) {
+    if (totalPages <= 1) return '';
+    let html = '<nav class="mt-3"><ul class="pagination pagination-sm justify-content-center">';
+    html += '<li class="page-item ' + (currentPage <= 1 ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="gotoRunsPage(' + (currentPage - 1) + ');return false;">Previous</a></li>';
+    for (let p = 1; p <= totalPages; p++) {
+        html += '<li class="page-item ' + (p === currentPage ? 'active' : '') + '"><a class="page-link" href="#" onclick="gotoRunsPage(' + p + ');return false;">' + p + '</a></li>';
+    }
+    html += '<li class="page-item ' + (currentPage >= totalPages ? 'disabled' : '') + '"><a class="page-link" href="#" onclick="gotoRunsPage(' + (currentPage + 1) + ');return false;">Next</a></li>';
+    html += '</ul></nav>';
+    return html;
+}
+
+function gotoRunsPage(page) {
+    if (!page || page < 1) return;
+    loadRuns(page);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadWorkflowDetails();
-    showHistory();
+    loadRuns(1);
 });
 </script>

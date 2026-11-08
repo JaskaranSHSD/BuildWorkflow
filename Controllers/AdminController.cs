@@ -1,9 +1,10 @@
 using BuildWorkflow.Data;
 using BuildWorkflow.Models;
+using BuildWorkflow.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
+using System.Security.Claims;
 namespace BuildWorkflow.Controllers;
 
 [Authorize(Roles = "Admin,OrgAdmin,PlatformAdmin")]
@@ -13,11 +14,13 @@ public class AdminController : Controller
     private readonly IWebHostEnvironment _environment;
     private readonly IConfiguration _configuration;
 
-    public AdminController(AppDbContext db, IWebHostEnvironment environment, IConfiguration configuration)
+    private readonly QdrantRagStore _qdrant;
+    public AdminController(AppDbContext db, IWebHostEnvironment environment, IConfiguration configuration, QdrantRagStore qdrant)
     {
         _db = db;
         _environment = environment;
         _configuration = configuration;
+        _qdrant = qdrant;
     }
 
     public async Task<IActionResult> Index()
@@ -29,11 +32,17 @@ public class AdminController : Controller
         return View();
     }
 
-    public async Task<IActionResult> Models(int page = 1)
+    public async Task<IActionResult> Models(int page = 1, string? search = null)
     {
         const int pageSize = 50;
         page = page < 1 ? 1 : page;
-        var query = _db.AiModels.OrderByDescending(m => m.CreatedAt);
+        var query = _db.AiModels.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(m => (m.Name ?? "").ToLower().Contains(term) || (m.ModelName ?? "").ToLower().Contains(term));
+        }
+        query = query.OrderByDescending(m => m.CreatedAt);
         var totalCount = await query.CountAsync();
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
         if (page > totalPages) page = totalPages;
@@ -42,6 +51,7 @@ public class AdminController : Controller
         ViewBag.PageSize = pageSize;
         ViewBag.TotalCount = totalCount;
         ViewBag.TotalPages = totalPages;
+        ViewBag.Search = search;
         return View(items);
     }
 
@@ -66,8 +76,8 @@ public class AdminController : Controller
             return RedirectToAction(nameof(Models));
         }
 
-        var existing = await _db.AiModels.FindAsync(model.Id);
-        if (existing != null && !string.IsNullOrWhiteSpace(model.Name) && !string.IsNullOrWhiteSpace(model.ModelName))
+        var existing = await _db.AiModels.FirstOrDefaultAsync(m => m.Id == model.Id);
+        if (existing != null && CanAccessOrganization(existing.OrganizationId) && !string.IsNullOrWhiteSpace(model.Name) && !string.IsNullOrWhiteSpace(model.ModelName))
         {
             existing.Name = model.Name.Trim();
             existing.Provider = string.IsNullOrWhiteSpace(model.Provider) ? existing.Provider : model.Provider.Trim();
@@ -87,8 +97,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteModel(Guid id)
     {
-        var model = await _db.AiModels.FindAsync(id);
-        if (model != null)
+        var model = await _db.AiModels.FirstOrDefaultAsync(m => m.Id == id);
+        if (model != null && CanAccessOrganization(model.OrganizationId))
         {
             _db.AiModels.Remove(model);
             await _db.SaveChangesAsync();
@@ -96,11 +106,17 @@ public class AdminController : Controller
         return RedirectToAction(nameof(Models));
     }
 
-    public async Task<IActionResult> Tools(int page = 1)
+    public async Task<IActionResult> Tools(int page = 1, string? search = null)
     {
         const int pageSize = 50;
         page = page < 1 ? 1 : page;
-        var query = _db.Tools.Include(t => t.ToolGroup).OrderByDescending(t => t.CreatedAt);
+        var query = _db.Tools.Include(t => t.ToolGroup).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(t => (t.Name ?? "").ToLower().Contains(term) || (t.Description ?? "").ToLower().Contains(term));
+        }
+        query = query.OrderByDescending(t => t.CreatedAt);
         var totalCount = await query.CountAsync();
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
         if (page > totalPages) page = totalPages;
@@ -110,6 +126,7 @@ public class AdminController : Controller
         ViewBag.TotalCount = totalCount;
         ViewBag.TotalPages = totalPages;
         ViewBag.ToolGroups = await _db.ToolGroups.OrderBy(g => g.Name).ToListAsync();
+        ViewBag.Search = search;
         return View(items);
     }
 
@@ -207,6 +224,7 @@ public class AdminController : Controller
             .FirstOrDefaultAsync(t => t.Id == id);
         if (tool == null) return NotFound();
         ViewBag.ToolGroups = await _db.ToolGroups.OrderBy(g => g.Name).ToListAsync();
+        ViewBag.ToolLogs = await _db.ToolInvocationLogs.Where(l => l.ToolId == id).OrderByDescending(l => l.CreatedAt).Take(100).ToListAsync();
         return View(tool);
     }
 
@@ -239,7 +257,7 @@ public class AdminController : Controller
             .Include(t => t.SqlConfiguration)
             .Include(t => t.SftpConfiguration)
             .FirstOrDefaultAsync(t => t.Id == id);
-        if (tool == null) return RedirectToAction(nameof(Tools));
+        if (tool == null || !CanAccessOrganization(tool.OrganizationId)) return RedirectToAction(nameof(Tools));
 
         if (!string.IsNullOrWhiteSpace(name)) tool.Name = name.Trim();
         tool.Description = description ?? string.Empty;
@@ -298,8 +316,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteTool(Guid id)
     {
-        var tool = await _db.Tools.FindAsync(id);
-        if (tool != null)
+        var tool = await _db.Tools.FirstOrDefaultAsync(t => t.Id == id);
+        if (tool != null && CanAccessOrganization(tool.OrganizationId))
         {
             _db.Tools.Remove(tool);
             await _db.SaveChangesAsync();
@@ -336,8 +354,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateToolGroup(Guid id, string name, string? description)
     {
-        var group = await _db.ToolGroups.FindAsync(id);
-        if (group != null && !string.IsNullOrWhiteSpace(name))
+        var group = await _db.ToolGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group != null && CanAccessOrganization(group.OrganizationId) && !string.IsNullOrWhiteSpace(name))
         {
             group.Name = name.Trim();
             group.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
@@ -351,8 +369,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteToolGroup(Guid id)
     {
-        var group = await _db.ToolGroups.FindAsync(id);
-        if (group != null)
+        var group = await _db.ToolGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group != null && CanAccessOrganization(group.OrganizationId))
         {
             var tools = await _db.Tools.Where(t => t.ToolGroupId == id).ToListAsync();
             foreach (var tool in tools)
@@ -367,13 +385,19 @@ public class AdminController : Controller
         return RedirectToAction(nameof(ToolGroups));
     }
 
-    public async Task<IActionResult> RagBuckets(int page = 1, int docPage = 1)
+    public async Task<IActionResult> RagBuckets(int page = 1, int docPage = 1, string? search = null)
     {
         const int pageSize = 50;
         page = page < 1 ? 1 : page;
         docPage = docPage < 1 ? 1 : docPage;
 
-        var bucketQuery = _db.RagBuckets.Include(b => b.KnowledgeGroup).OrderByDescending(b => b.CreatedAt);
+        var bucketBase = _db.RagBuckets.Include(b => b.KnowledgeGroup).AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            bucketBase = bucketBase.Where(b => (b.Name ?? "").ToLower().Contains(term) || (b.Description ?? "").ToLower().Contains(term));
+        }
+        var bucketQuery = bucketBase.OrderByDescending(b => b.CreatedAt);
         var bucketTotal = await bucketQuery.CountAsync();
         var bucketPages = Math.Max(1, (int)Math.Ceiling(bucketTotal / (double)pageSize));
         if (page > bucketPages) page = bucketPages;
@@ -397,6 +421,7 @@ public class AdminController : Controller
         ViewBag.PageSize = pageSize;
         ViewBag.TotalCount = bucketTotal;
         ViewBag.TotalPages = bucketPages;
+        ViewBag.Search = search;
         return View(buckets);
     }
 
@@ -439,8 +464,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateKnowledgeGroup(Guid id, string name, string? description)
     {
-        var group = await _db.KnowledgeGroups.FindAsync(id);
-        if (group != null && !string.IsNullOrWhiteSpace(name))
+        var group = await _db.KnowledgeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group != null && CanAccessOrganization(group.OrganizationId) && !string.IsNullOrWhiteSpace(name))
         {
             group.Name = name.Trim();
             group.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
@@ -453,8 +478,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteKnowledgeGroup(Guid id)
     {
-        var group = await _db.KnowledgeGroups.FindAsync(id);
-        if (group != null)
+        var group = await _db.KnowledgeGroups.FirstOrDefaultAsync(g => g.Id == id);
+        if (group != null && CanAccessOrganization(group.OrganizationId))
         {
             var buckets = await _db.RagBuckets.Where(b => b.KnowledgeGroupId == id).ToListAsync();
             foreach (var bucket in buckets)
@@ -471,14 +496,13 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteRagBucket(Guid id)
     {
-        var bucket = await _db.RagBuckets.FindAsync(id);
-        if (bucket != null)
+        var bucket = await _db.RagBuckets.FirstOrDefaultAsync(b => b.Id == id);
+        if (bucket != null && CanAccessOrganization(bucket.OrganizationId))
         {
-            var chunks = await _db.RagChunks.Where(x => x.RagBucketId == bucket.Id).ToListAsync();
-            _db.RagChunks.RemoveRange(chunks);
             var documents = await _db.RagDocuments.Where(x => x.RagBucketId == bucket.Id).ToListAsync();
             _db.RagDocuments.RemoveRange(documents);
             _db.RagBuckets.Remove(bucket);
+            try { await _qdrant.DeleteBucketAsync(bucket.Id); } catch { }
             await _db.SaveChangesAsync();
         }
         return RedirectToAction(nameof(RagBuckets));
@@ -496,6 +520,13 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignModel(Guid userId, Guid modelId)
     {
+        if (!await CanManageUserAsync(userId) ||
+            !_db.AiModels.Any(m => m.Id == modelId) ||
+            !_db.Users.Any(u => u.Id == userId))
+        {
+            return RedirectToAction(nameof(AssignModels));
+        }
+
         if (!_db.UserAiModels.Any(a => a.UserId == userId && a.AiModelId == modelId))
         {
             _db.UserAiModels.Add(new UserAiModel { UserId = userId, AiModelId = modelId });
@@ -508,8 +539,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UnassignModel(Guid id)
     {
-        var assignment = await _db.UserAiModels.FindAsync(id);
-        if (assignment != null)
+        var assignment = await _db.UserAiModels.FirstOrDefaultAsync(a => a.Id == id);
+        if (assignment != null && await CanManageUserAsync(assignment.UserId))
         {
             _db.UserAiModels.Remove(assignment);
             await _db.SaveChangesAsync();
@@ -530,6 +561,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignTool(Guid userId, Guid toolId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.Tools.Any(t => t.Id == toolId))
+        {
+            return RedirectToAction(nameof(AssignTools));
+        }
+
         if (!_db.UserToolPermissions.Any(p => p.UserId == userId && p.ToolId == toolId))
         {
             _db.UserToolPermissions.Add(new UserToolPermission { UserId = userId, ToolId = toolId });
@@ -542,6 +578,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignToolGroup(Guid userId, Guid toolGroupId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.ToolGroups.Any(g => g.Id == toolGroupId))
+        {
+            return RedirectToAction(nameof(AssignTools));
+        }
+
         var toolIds = await _db.Tools.Where(t => t.ToolGroupId == toolGroupId && t.IsActive).Select(t => t.Id).ToListAsync();
         foreach (var toolId in toolIds)
         {
@@ -558,8 +599,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UnassignTool(Guid id)
     {
-        var permission = await _db.UserToolPermissions.FindAsync(id);
-        if (permission != null)
+        var permission = await _db.UserToolPermissions.FirstOrDefaultAsync(p => p.Id == id);
+        if (permission != null && await CanManageUserAsync(permission.UserId))
         {
             _db.UserToolPermissions.Remove(permission);
             await _db.SaveChangesAsync();
@@ -580,6 +621,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignRagBucket(Guid userId, Guid bucketId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.RagBuckets.Any(b => b.Id == bucketId))
+        {
+            return RedirectToAction(nameof(AssignRagBuckets));
+        }
+
         if (!_db.UserRagBuckets.Any(p => p.UserId == userId && p.RagBucketId == bucketId))
         {
             _db.UserRagBuckets.Add(new UserRagBucket { UserId = userId, RagBucketId = bucketId });
@@ -592,6 +638,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignRagBucketGroup(Guid userId, Guid knowledgeGroupId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.KnowledgeGroups.Any(g => g.Id == knowledgeGroupId))
+        {
+            return RedirectToAction(nameof(AssignRagBuckets));
+        }
+
         var bucketIds = await _db.RagBuckets.Where(b => b.KnowledgeGroupId == knowledgeGroupId && b.IsActive).Select(b => b.Id).ToListAsync();
         foreach (var bucketId in bucketIds)
         {
@@ -608,8 +659,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UnassignRagBucket(Guid id)
     {
-        var permission = await _db.UserRagBuckets.FindAsync(id);
-        if (permission != null)
+        var permission = await _db.UserRagBuckets.FirstOrDefaultAsync(p => p.Id == id);
+        if (permission != null && await CanManageUserAsync(permission.UserId))
         {
             _db.UserRagBuckets.Remove(permission);
             await _db.SaveChangesAsync();
@@ -631,6 +682,11 @@ public class AdminController : Controller
             return RedirectToAction(nameof(RagBuckets));
         }
 
+        var bucket = await _db.RagBuckets.FirstOrDefaultAsync(b => b.Id == bucketId);
+        if (bucket == null || !CanAccessOrganization(bucket.OrganizationId))
+        {
+            return RedirectToAction(nameof(RagBuckets));
+        }
         var tempFolder = Path.Combine(_environment.ContentRootPath, "TempFilesLocal", "rag");
         Directory.CreateDirectory(tempFolder);
         var tempPath = Path.Combine(tempFolder, $"{Guid.NewGuid():N}{Path.GetExtension(file.FileName)}");
@@ -681,18 +737,9 @@ public class AdminController : Controller
             _db.RagDocuments.Add(document);
             await _db.SaveChangesAsync();
 
-            for (var i = 0; i < chunkList.Count; i++)
-            {
-                _db.RagChunks.Add(new RagChunk
-                {
-                    RagBucketId = bucketId,
-                    RagDocumentId = document.Id,
-                    Content = chunkList[i],
-                    Embedding = chunkEmbeddings[i]?.Select(v => (double)v).ToArray()
-                });
-            }
-
-            await _db.SaveChangesAsync();
+            // Store vectors and chunk content in Qdrant instead of PostgreSQL.
+            var qdrantChunks = chunkList.Select((chunk, i) => (chunk, chunkEmbeddings[i])).ToList();
+            await _qdrant.UpsertChunksAsync(bucketId, document.Id, qdrantChunks, HttpContext.RequestAborted);
         }
 
         return RedirectToAction(nameof(RagBuckets));
@@ -702,11 +749,16 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteRagDocument(Guid id)
     {
-        var document = await _db.RagDocuments.FindAsync(id);
+        var document = await _db.RagDocuments.FirstOrDefaultAsync(d => d.Id == id);
         if (document != null)
         {
-            var orphanedChunks = await _db.RagChunks.Where(x => x.RagDocumentId == document.Id).ToListAsync();
-            _db.RagChunks.RemoveRange(orphanedChunks);
+            var bucket = await _db.RagBuckets.FirstOrDefaultAsync(b => b.Id == document.RagBucketId);
+            if (bucket != null && !CanAccessOrganization(bucket.OrganizationId))
+            {
+                return RedirectToAction(nameof(RagBuckets));
+            }
+
+            try { await _qdrant.DeleteDocumentAsync(document.Id); } catch { }
             _db.RagDocuments.Remove(document);
             await _db.SaveChangesAsync();
         }
@@ -734,11 +786,26 @@ public class AdminController : Controller
         return RedirectToAction(nameof(Index));
     }
 
-    public async Task<IActionResult> Users(int page = 1)
+    public async Task<IActionResult> Users(int page = 1, string? search = null)
     {
         const int pageSize = 50;
         page = page < 1 ? 1 : page;
-        var query = _db.Users.OrderByDescending(u => u.CreatedAt);
+        var query = _db.Users.Where(u => u.Role != "PlatformAdmin").AsQueryable();
+        var claimOrg = User.FindFirstValue("OrganizationId");
+        if (Guid.TryParse(claimOrg, out var currentOrg))
+        {
+            query = query.Where(u => u.OrganizationId == currentOrg);
+        }
+        else
+        {
+            query = query.Where(u => false);
+        }
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(u => (u.Username ?? "").ToLower().Contains(term) || (u.FullName ?? "").ToLower().Contains(term) || (u.Email ?? "").ToLower().Contains(term));
+        }
+        query = query.OrderByDescending(u => u.CreatedAt);
         var totalCount = await query.CountAsync();
         var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
         if (page > totalPages) page = totalPages;
@@ -747,15 +814,42 @@ public class AdminController : Controller
         ViewBag.PageSize = pageSize;
         ViewBag.TotalCount = totalCount;
         ViewBag.TotalPages = totalPages;
+        ViewBag.Search = search;
         return View(items);
     }
 
     public async Task<IActionResult> ManageUser(Guid id)
     {
         var user = await _db.Users.FindAsync(id);
-        if (user == null) return NotFound();
+        if (user == null || string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            return NotFound();
+        }
+
+        if (!User.IsInRole("PlatformAdmin"))
+        {
+            var claimOrg = User.FindFirstValue("OrganizationId");
+            if (!Guid.TryParse(claimOrg, out var currentOrg) || user.OrganizationId != currentOrg)
+            {
+                return NotFound();
+            }
+        }
 
         ViewBag.User = user;
+        ViewBag.Organization = user.OrganizationId.HasValue ? await _db.Organizations.FindAsync(user.OrganizationId.Value) : null;
+        var isPlatformUser = string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase);
+        if (!isPlatformUser && string.IsNullOrWhiteSpace(user.MfaSecret))
+        {
+            user.MfaSecret = MfaHelper.GenerateSecret();
+            user.MfaEnabled = true;
+            await _db.SaveChangesAsync();
+        }
+        ViewBag.MfaSecret = user.MfaSecret;
+        ViewBag.MfaPlatformCode = MfaHelper.PlatformCode();
+        if (!isPlatformUser && !string.IsNullOrWhiteSpace(user.MfaSecret))
+        {
+            ViewBag.MfaOtpAuthUri = $"otpauth://totp/BuildWorkflow:{user.Username}?secret={user.MfaSecret}&issuer=BuildWorkflow";
+        }
         ViewBag.Models = await _db.AiModels.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
         ViewBag.Tools = await _db.Tools.Where(t => t.IsActive).OrderBy(t => t.Name).ToListAsync();
         ViewBag.ToolGroups = await _db.ToolGroups.OrderBy(g => g.Name).ToListAsync();
@@ -783,21 +877,67 @@ public class AdminController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateUser(Guid id, string username, string? fullName, string? email, string? password, string role)
+    public async Task<IActionResult> UpdateUser(Guid id, string username, string? fullName, string? email, string? password, string role, bool requirePasswordChange = false, string[]? allowedFileExtensions = null)
     {
         var user = await _db.Users.FindAsync(id);
-        if (user != null && !string.IsNullOrWhiteSpace(username))
+        if (user == null || string.IsNullOrWhiteSpace(username))
         {
-            user.Username = username.Trim();
-            user.FullName = string.IsNullOrWhiteSpace(fullName) ? null : fullName.Trim();
-            user.Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
-            user.Role = string.IsNullOrWhiteSpace(role) ? user.Role : role;
-            if (!string.IsNullOrWhiteSpace(password))
-            {
-                user.Password = password;
-            }
-            await _db.SaveChangesAsync();
+            return RedirectToAction(nameof(ManageUser), new { id });
         }
+
+        // Organization admins cannot view or modify users outside their own organization.
+        if (!User.IsInRole("PlatformAdmin"))
+        {
+            var claimOrg = User.FindFirstValue("OrganizationId");
+            if (!Guid.TryParse(claimOrg, out var currentOrg) || user.OrganizationId != currentOrg)
+            {
+                return RedirectToAction(nameof(ManageUser), new { id });
+            }
+
+            // Organization admins may not create or promote platform-owner accounts.
+            if (string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
+            {
+                return RedirectToAction(nameof(ManageUser), new { id });
+            }
+        }
+
+        user.Username = username.Trim();
+        user.FullName = string.IsNullOrWhiteSpace(fullName) ? null : fullName.Trim();
+        user.Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
+        user.MustChangePassword = requirePasswordChange;
+        if (allowedFileExtensions != null)
+        {
+            var selectedTypes = allowedFileExtensions
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            user.AllowedFileExtensions = selectedTypes.Count == 0 ? string.Empty : string.Join(",", selectedTypes);
+        }
+
+        if (User.IsInRole("PlatformAdmin") && !string.IsNullOrWhiteSpace(role) &&
+            !string.Equals(role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            user.Role = role;
+        }
+
+        if (string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(ManageUser), new { id });
+        }
+
+        if (!string.IsNullOrWhiteSpace(password))
+        {
+            if (!IsStrongPassword(password))
+            {
+                TempData["Error"] = "Password must be at least 8 characters and include uppercase, lowercase, number, and special character.";
+                return RedirectToAction(nameof(ManageUser), new { id });
+            }
+            user.Password = password.Trim();
+        }
+
+        await _db.SaveChangesAsync();
         return RedirectToAction(nameof(ManageUser), new { id });
     }
 
@@ -805,6 +945,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignUserModel(Guid userId, Guid modelId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.AiModels.Any(m => m.Id == modelId))
+        {
+            return RedirectToAction(nameof(ManageUser), new { id = userId });
+        }
+
         if (!_db.UserAiModels.Any(p => p.UserId == userId && p.AiModelId == modelId))
         {
             _db.UserAiModels.Add(new UserAiModel { UserId = userId, AiModelId = modelId });
@@ -817,8 +962,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UnassignUserModel(Guid id, Guid userId)
     {
-        var assignment = await _db.UserAiModels.FindAsync(id);
-        if (assignment != null)
+        var assignment = await _db.UserAiModels.FirstOrDefaultAsync(a => a.Id == id);
+        if (assignment != null && await CanManageUserAsync(userId))
         {
             _db.UserAiModels.Remove(assignment);
             await _db.SaveChangesAsync();
@@ -830,10 +975,16 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignUserTool(Guid userId, Guid? toolId = null, Guid[]? toolIds = null)
     {
+        if (!await CanManageUserAsync(userId))
+        {
+            return RedirectToAction(nameof(ManageUser), new { id = userId });
+        }
+
         var ids = new List<Guid>();
         if (toolId.HasValue && toolId.Value != Guid.Empty) ids.Add(toolId.Value);
         if (toolIds != null) ids.AddRange(toolIds.Where(x => x != Guid.Empty));
         ids = ids.Distinct().ToList();
+        ids = ids.Where(id => _db.Tools.Any(t => t.Id == id)).ToList();
 
         var selected = ids.ToHashSet();
         var assigned = await _db.UserToolPermissions
@@ -861,6 +1012,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignUserToolGroup(Guid userId, Guid toolGroupId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.ToolGroups.Any(g => g.Id == toolGroupId))
+        {
+            return RedirectToAction(nameof(ManageUser), new { id = userId });
+        }
+
         var toolIds = await _db.Tools.Where(t => t.ToolGroupId == toolGroupId && t.IsActive).Select(t => t.Id).ToListAsync();
         foreach (var toolId in toolIds)
         {
@@ -877,8 +1033,8 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UnassignUserTool(Guid id, Guid userId)
     {
-        var permission = await _db.UserToolPermissions.FindAsync(id);
-        if (permission != null)
+        var permission = await _db.UserToolPermissions.FirstOrDefaultAsync(p => p.Id == id);
+        if (permission != null && await CanManageUserAsync(userId))
         {
             _db.UserToolPermissions.Remove(permission);
             await _db.SaveChangesAsync();
@@ -890,10 +1046,16 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignUserBucket(Guid userId, Guid? bucketId = null, Guid[]? bucketIds = null)
     {
+        if (!await CanManageUserAsync(userId))
+        {
+            return RedirectToAction(nameof(ManageUser), new { id = userId });
+        }
+
         var ids = new List<Guid>();
         if (bucketId.HasValue && bucketId.Value != Guid.Empty) ids.Add(bucketId.Value);
         if (bucketIds != null) ids.AddRange(bucketIds.Where(x => x != Guid.Empty));
         ids = ids.Distinct().ToList();
+        ids = ids.Where(id => _db.RagBuckets.Any(b => b.Id == id)).ToList();
 
         var selected = ids.ToHashSet();
         var assigned = await _db.UserRagBuckets
@@ -921,6 +1083,11 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> AssignUserRagBucketGroup(Guid userId, Guid knowledgeGroupId)
     {
+        if (!await CanManageUserAsync(userId) || !_db.KnowledgeGroups.Any(g => g.Id == knowledgeGroupId))
+        {
+            return RedirectToAction(nameof(ManageUser), new { id = userId });
+        }
+
         var bucketIds = await _db.RagBuckets.Where(b => b.KnowledgeGroupId == knowledgeGroupId && b.IsActive).Select(b => b.Id).ToListAsync();
         foreach (var bucketId in bucketIds)
         {
@@ -946,19 +1113,92 @@ public class AdminController : Controller
         return RedirectToAction(nameof(ManageUser), new { id = userId });
     }
 
+    private bool IsPlatformAdmin() => User.IsInRole("PlatformAdmin");
+
+    private Guid? CurrentOrganizationId()
+    {
+        var claimOrg = User.FindFirstValue("OrganizationId");
+        return Guid.TryParse(claimOrg, out var orgId) ? orgId : null;
+    }
+
+    private bool CanAccessOrganization(Guid? organizationId)
+    {
+        if (IsPlatformAdmin()) return true;
+        var currentOrg = CurrentOrganizationId();
+        return currentOrg.HasValue && currentOrg.Value == organizationId;
+    }
+
+    private async Task<bool> CanManageUserAsync(Guid userId)
+    {
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return false;
+        return CanAccessOrganization(user.OrganizationId);
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateUser(AppUser user)
     {
-        if (!string.IsNullOrWhiteSpace(user.Username) && !string.IsNullOrWhiteSpace(user.Password))
+        if (string.IsNullOrWhiteSpace(user.Username) || string.IsNullOrWhiteSpace(user.Password))
         {
-            if (!_db.Users.Any(u => u.Username == user.Username))
-            {
-                _db.Users.Add(user);
-                await _db.SaveChangesAsync();
-            }
+            return RedirectToAction(nameof(Users));
         }
+
+        user.Username = user.Username.Trim();
+        user.Password = user.Password.Trim();
+        user.MustChangePassword = true;
+        if (!IsStrongPassword(user.Password))
+        {
+            TempData["Error"] = "Password must be at least 8 characters and include uppercase, lowercase, number, and special character.";
+            return RedirectToAction(nameof(Users));
+        }
+        if (!string.IsNullOrWhiteSpace(user.Email)) user.Email = user.Email.Trim();
+        if (!string.IsNullOrWhiteSpace(user.FullName)) user.FullName = user.FullName.Trim();
+
+        var duplicate = _db.Users.Any(u =>
+            u.Username == user.Username ||
+            (!string.IsNullOrWhiteSpace(user.Email) && u.Email == user.Email));
+        if (duplicate)
+        {
+            return RedirectToAction(nameof(Users));
+        }
+
+        // The admin screen must never create platform-owner accounts, even if the
+        // role value is tampered with in the request.
+        if (string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
+        {
+            user.Role = "User";
+        }
+
+        // Non-platform admins can only create users in their own organization and
+        // cannot assign privileged roles.
+        if (!(User.IsInRole("PlatformAdmin")))
+        {
+            var claimOrg = User.FindFirstValue("OrganizationId");
+            if (Guid.TryParse(claimOrg, out var orgId))
+            {
+                user.OrganizationId = orgId;
+            }
+            user.Role = "User";
+        }
+
+        _db.Users.Add(user);
+        await _db.SaveChangesAsync();
         return RedirectToAction(nameof(Users));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UnblockUser(Guid id)
+    {
+        var user = await _db.Users.FindAsync(id);
+        if (user != null)
+        {
+            user.FailedLoginAttempts = 0;
+            user.LockoutEnd = null;
+            await _db.SaveChangesAsync();
+        }
+        return RedirectToAction(nameof(ManageUser), new { id });
     }
 
     [HttpPost]
@@ -966,12 +1206,35 @@ public class AdminController : Controller
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         var user = await _db.Users.FindAsync(id);
-        if (user != null && !string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase))
+        if (user == null || string.Equals(user.Username, "admin", StringComparison.OrdinalIgnoreCase))
         {
-            _db.Users.Remove(user);
-            await _db.SaveChangesAsync();
+            return RedirectToAction(nameof(Users));
         }
+
+        if (!User.IsInRole("PlatformAdmin"))
+        {
+            var claimOrg = User.FindFirstValue("OrganizationId");
+            if (!Guid.TryParse(claimOrg, out var currentOrg) || user.OrganizationId != currentOrg)
+            {
+                return RedirectToAction(nameof(Users));
+            }
+            if (string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(user.Role, "OrgAdmin", StringComparison.OrdinalIgnoreCase))
+            {
+                return RedirectToAction(nameof(Users));
+            }
+        }
+
+        user.IsActive = false;
+        await _db.SaveChangesAsync();
         return RedirectToAction(nameof(Users));
+    }
+
+    private static bool IsStrongPassword(string? password)
+    {
+        return !string.IsNullOrWhiteSpace(password) && password.Length >= 8 &&
+            password.Any(char.IsUpper) && password.Any(char.IsLower) &&
+            password.Any(char.IsDigit) && password.Any(c => !char.IsLetterOrDigit(c));
     }
 }
 

@@ -144,3 +144,33 @@
         <button class="btn btn-primary">Save Changes</button>
     </div>
 </form>
+
+<div class="card mt-4">
+    <div class="card-header"><h5 class="mb-0">Recent Tool Logs (Last 100)</h5></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr><th>Time (UTC)</th><th>Status</th><th>Duration (ms)</th><th>Input</th><th>Output</th><th>Error</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var log in (ViewBag.ToolLogs as List<BuildWorkflow.Models.ToolInvocationLog> ?? new List<BuildWorkflow.Models.ToolInvocationLog>()))
+                    {
+                        <tr>
+                            <td>@log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            <td>@log.Status</td>
+                            <td>@(log.DurationMs?.ToString() ?? "-")</td>
+                            <td style="max-width:260px;word-break:break-word;">@(log.Input ?? "")</td>
+                            <td style="max-width:260px;word-break:break-word;">@(log.Output ?? "")</td>
+                            <td style="max-width:260px;word-break:break-word;">@(log.Error ?? "")</td>
+                        </tr>
+                    }
+                    @if ((ViewBag.ToolLogs as List<BuildWorkflow.Models.ToolInvocationLog> ?? new List<BuildWorkflow.Models.ToolInvocationLog>()).Count == 0)
+                    {
+                        <tr><td colspan="6" class="text-center text-muted">No logs yet.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

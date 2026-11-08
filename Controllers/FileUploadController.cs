@@ -14,7 +14,8 @@ public class FileUploadController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IWebHostEnvironment _environment;
 
-    private const long MaxFileSize = 10 * 1024 * 1024;
+    private const long MaxRequestSize = 50 * 1024 * 1024;
+    private const long DefaultMaxFileSize = 10 * 1024 * 1024;
 
     public FileUploadController(AppDbContext db, IWebHostEnvironment environment)
     {
@@ -23,7 +24,7 @@ public class FileUploadController : ControllerBase
     }
 
     [Authorize]
-    [RequestSizeLimit(MaxFileSize)]
+    [RequestSizeLimit(MaxRequestSize)]
     [HttpPost("upload")]
     public async Task<IActionResult> Upload(IFormFile file, [FromForm] string? sessionKey, CancellationToken cancellationToken)
     {
@@ -32,13 +33,76 @@ public class FileUploadController : ControllerBase
             return BadRequest(new { error = "A non-empty file is required." });
         }
 
-        if (file.Length > MaxFileSize)
-        {
-            return BadRequest(new { error = "File is too large. Maximum size is 10 MB." });
-        }
-
         var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
         Guid? userId = Guid.TryParse(userIdValue, out var parsedUserId) ? parsedUserId : null;
+
+        var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".zip"
+        };
+        long maxSize = DefaultMaxFileSize;
+
+        if (userId.HasValue)
+        {
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId.Value, cancellationToken);
+            if (user?.OrganizationId.HasValue == true)
+            {
+                var org = await _db.Organizations.AsNoTracking().FirstOrDefaultAsync(o => o.Id == user.OrganizationId.Value, cancellationToken);
+                if (org != null)
+                {
+                    if (org.MaxUploadSizeBytes > 0)
+                    {
+                        maxSize = org.MaxUploadSizeBytes;
+                    }
+                    var orgAllowed = (org.AllowedFileExtensions ?? string.Empty)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (orgAllowed.Length > 0)
+                    {
+                        allowedExtensions = new HashSet<string>(orgAllowed, StringComparer.OrdinalIgnoreCase);
+                    }
+
+                    if (user.AllowedFileExtensions != null)
+                    {
+                        var userAllowed = user.AllowedFileExtensions
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        if (userAllowed.Length > 0)
+                        {
+                            allowedExtensions = new HashSet<string>(userAllowed, StringComparer.OrdinalIgnoreCase)
+                                .Intersect(allowedExtensions, StringComparer.OrdinalIgnoreCase)
+                                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        }
+                        else
+                        {
+                            allowedExtensions.Clear();
+                        }
+                    }
+                }
+            }
+            else if (user != null && user.AllowedFileExtensions != null)
+            {
+                var userAllowed = user.AllowedFileExtensions
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (userAllowed.Length > 0)
+                {
+                    allowedExtensions = new HashSet<string>(userAllowed, StringComparer.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    allowedExtensions.Clear();
+                }
+            }
+        }
+
+        if (file.Length > maxSize)
+        {
+            return BadRequest(new { error = "File is too large. Maximum size is " + maxSize + " bytes." });
+        }
+
+        var fileExtension = Path.GetExtension(file.FileName ?? string.Empty).ToLowerInvariant();
+        if (!allowedExtensions.Contains(fileExtension))
+        {
+            return BadRequest(new { error = "File type is not allowed. Allowed types: " + string.Join(", ", allowedExtensions) + "." });
+        }
 
         var safeSession = SanitizeSegment(string.IsNullOrWhiteSpace(sessionKey) ? Guid.NewGuid().ToString("N") : sessionKey);
         var userSegment = userId.HasValue ? userId.Value.ToString("N") : "anonymous";

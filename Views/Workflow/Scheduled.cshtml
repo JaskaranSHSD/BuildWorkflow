@@ -1,0 +1,228 @@
+@{
+    ViewData["Title"] = "Scheduled Workflows";
+    var schedules = ViewBag.Schedules as IEnumerable<dynamic> ?? new List<dynamic>();
+}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="mb-0">Scheduled Workflows</h2>
+        <a class="btn btn-outline-secondary" href="/Workflow">Back to Workflows</a>
+    </div>
+    <form method="get" action="/Workflow/Scheduled" class="mb-3">
+    <div class="input-group">
+        <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search scheduled workflows by name…" />
+        <button class="btn btn-outline-secondary" type="submit">Search</button>
+    </div>
+</form>
+<div class="table-responsive">
+        <table class="table table align-middle">
+            <thead>
+                <tr>
+                    <th>Workflow</th>
+                    <th>Pattern</th>
+                    <th>Next Run (UTC)</th>
+                    <th>Last Run (UTC)</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in schedules)
+                {
+                    var enabled = (bool)s.Enabled ? "Enabled" : "Disabled";
+                    var pattern = (string)(s.ScheduleType ?? "Once");
+                    var next = s.NextRunAt != null ? ((DateTimeOffset)s.NextRunAt).ToString("yyyy-MM-dd HH:mm") : "-";
+                    var last = s.LastRunAt != null ? ((DateTimeOffset)s.LastRunAt).ToString("yyyy-MM-dd HH:mm") : "-";
+                    <tr>
+                        <td><strong>@s.WorkflowName</strong></td>
+                        <td>@pattern</td>
+                        <td>@next</td>
+                        <td>@last</td>
+                        <td>@enabled</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-warning border border-warning me-1" onclick='openEditSchedule(@Html.Raw(System.Text.Json.JsonSerializer.Serialize(s)))'>Edit</button>
+                            <a class="btn btn-sm btn-outline-secondary" href="/Workflow/Manage?id=@s.WorkflowId">Manage</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if ((ViewBag.TotalPages ?? 1) > 1)
+    {
+        <nav class="mt-3">
+            <ul class="pagination">
+                @for (int p = 1; p <= (int)ViewBag.TotalPages; p++)
+                {
+                    <li class="page-item @(p == (int)ViewBag.Page ? "active" : "")">
+                        <a class="page-link" href="/Workflow/Scheduled?page=@p&search=@Uri.EscapeDataString((string)(ViewBag.Search ?? ""))">@p</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+</div>
+
+<div class="modal fade" id="scheduleWorkflowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Schedule</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="scheduleWfId" />
+        <input type="hidden" id="editingScheduleId" />
+        <div class="mb-2">
+          <label class="form-label">Schedule pattern</label>
+          <select id="scheduleType" class="form-select" onchange="toggleScheduleFields()">
+            <option value="once">Run once</option>
+            <option value="interval">Repeat every N minutes</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly (selected weekdays)</option>
+            <option value="monthlyDay">Monthly (day of month)</option>
+            <option value="monthlyNth">Monthly (nth weekday, e.g. 1st Monday)</option>
+            <option value="monthlyLastDay">Monthly (last day of month)</option>
+          </select>
+        </div>
+        <div class="mb-2" id="scheduleDateTimeGroup">
+          <label class="form-label">Start date & time</label>
+          <input id="scheduleDateTime" type="datetime-local" class="form-control" />
+        </div>
+        <div class="mb-2 d-none" id="scheduleIntervalGroup">
+          <label class="form-label">Repeat every (minutes)</label>
+          <input id="scheduleIntervalMinutes" type="number" class="form-control" value="60" min="1" />
+        </div>
+        <div class="mb-2 d-none" id="scheduleTimeGroup">
+          <label class="form-label">Time of day (hour:minute)</label>
+          <div class="d-flex gap-2">
+            <input id="scheduleHour" type="number" class="form-control" min="0" max="23" value="9" />
+            <input id="scheduleMinute" type="number" class="form-control" min="0" max="59" value="0" />
+          </div>
+        </div>
+        <div class="mb-2 d-none" id="scheduleWeekDaysGroup">
+          <label class="form-label">Weekdays</label>
+          <div class="d-flex flex-wrap gap-2">
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="1" id="schedDow1"><label class="form-check-label" for="schedDow1">Mon</label></div>
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="2" id="schedDow2"><label class="form-check-label" for="schedDow2">Tue</label></div>
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="3" id="schedDow3"><label class="form-check-label" for="schedDow3">Wed</label></div>
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="4" id="schedDow4"><label class="form-check-label" for="schedDow4">Thu</label></div>
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="5" id="schedDow5"><label class="form-check-label" for="schedDow5">Fri</label></div>
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="6" id="schedDow6"><label class="form-check-label" for="schedDow6">Sat</label></div>
+            <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="0" id="schedDow0"><label class="form-check-label" for="schedDow0">Sun</label></div>
+          </div>
+        </div>
+        <div class="mb-2 d-none" id="scheduleMonthDayGroup">
+          <label class="form-label">Day of month (1-31)</label>
+          <input id="scheduleDayOfMonth" type="number" class="form-control" min="1" max="31" value="1" />
+        </div>
+        <div class="mb-2 d-none" id="scheduleMonthNthGroup">
+          <label class="form-label">Week of month + weekday</label>
+          <div class="d-flex gap-2">
+            <select id="scheduleWeekOfMonth" class="form-select">
+              <option value="1">1st</option>
+              <option value="2">2nd</option>
+              <option value="3">3rd</option>
+              <option value="4">4th</option>
+              <option value="5">Last</option>
+            </select>
+            <select id="scheduleDowSingle" class="form-select">
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+              <option value="0">Sunday</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-2 d-none" id="scheduleEndGroup">
+          <label class="form-label">End at (optional)</label>
+          <input id="scheduleEndAt" type="datetime-local" class="form-control" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" onclick="saveEditedSchedule()">Save Schedule</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+@section Scripts {
+<script>
+const api = (path, opts) => fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+let editingScheduleId = null;
+function toggleScheduleFields() {
+  const type = document.getElementById('scheduleType').value;
+  const show = (id, cond) => { const el = document.getElementById(id); if (!el) return; if (cond) el.classList.remove('d-none'); else el.classList.add('d-none'); };
+  show('scheduleIntervalGroup', type === 'interval');
+  show('scheduleTimeGroup', ['daily','weekly','monthlyDay','monthlyNth','monthlyLastDay'].includes(type));
+  show('scheduleWeekDaysGroup', type === 'weekly');
+  show('scheduleMonthDayGroup', type === 'monthlyDay');
+  show('scheduleMonthNthGroup', type === 'monthlyNth');
+  show('scheduleEndGroup', type !== 'once');
+}
+function mapScheduleType(s) {
+  if (!s) return 'once';
+  const t = (s.scheduleType || s.ScheduleType || '').toLowerCase();
+  if (t === 'interval') return 'interval';
+  if (t === 'daily') return 'daily';
+  if (t === 'weekly') return 'weekly';
+  if (t === 'monthlyday') return 'monthlyDay';
+  if (t === 'monthlynth') return 'monthlyNth';
+  if (t === 'monthlylastday') return 'monthlyLastDay';
+  return 'once';
+}
+function fillScheduleModal(s) {
+  editingScheduleId = s.ScheduleId || s.scheduleId || s.id;
+  document.getElementById('scheduleWfId').value = s.WorkflowId || s.workflowId || '';
+  document.getElementById('editingScheduleId').value = editingScheduleId || '';
+  document.getElementById('scheduleType').value = mapScheduleType(s);
+  toggleScheduleFields();
+  document.getElementById('scheduleIntervalMinutes').value = (s.intervalMinutes || s.IntervalMinutes) ? (s.intervalMinutes || s.IntervalMinutes) : 60;
+  document.getElementById('scheduleHour').value = (s.hour != null || s.Hour != null) ? (s.hour ?? s.Hour) : 9;
+  document.getElementById('scheduleMinute').value = (s.minute != null || s.Minute != null) ? (s.minute ?? s.Minute) : 0;
+  document.getElementById('scheduleDayOfMonth').value = (s.dayOfMonth || s.DayOfMonth) ? (s.dayOfMonth || s.DayOfMonth) : 1;
+  document.getElementById('scheduleWeekOfMonth').value = (s.weekOfMonth || s.WeekOfMonth) ? (s.weekOfMonth || s.WeekOfMonth) : 1;
+  document.getElementById('scheduleDowSingle').value = (s.dayOfWeek != null || s.DayOfWeek != null) ? (s.dayOfWeek ?? s.DayOfWeek) : 1;
+  document.getElementById('scheduleEndAt').value = '';
+  const runAt = s.runAt || s.RunAt || s.nextRunAt || s.NextRunAt;
+  if (runAt) document.getElementById('scheduleDateTime').value = new Date(runAt).toISOString().slice(0,16);
+  document.querySelectorAll('.sched-dow').forEach(cb => cb.checked = false);
+  const dow = s.daysOfWeek || s.DaysOfWeek;
+  if (dow) String(dow).split(',').forEach(d => {
+    const cb = document.querySelector('.sched-dow[value="' + d.trim() + '"]');
+    if (cb) cb.checked = true;
+  });
+}
+function openEditSchedule(s) {
+  fillScheduleModal(s);
+  const modal = new bootstrap.Modal(document.getElementById('scheduleWorkflowModal'));
+  modal.show();
+}
+async function saveEditedSchedule() {
+  const eid = editingScheduleId || document.getElementById('editingScheduleId').value;
+  const type = document.getElementById('scheduleType').value;
+  const dateTimeValue = document.getElementById('scheduleDateTime').value;
+  const runAt = dateTimeValue ? new Date(dateTimeValue).toISOString() : null;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let scheduleType='Once', intervalMinutes=null, daysOfWeek=null, dayOfMonth=null, weekOfMonth=null, dayOfWeek=null, hour=null, minute=null, endAt=null;
+  const endVal=document.getElementById('scheduleEndAt').value;
+  if (endVal) endAt=new Date(endVal).toISOString();
+  if (type==='interval'){scheduleType='Interval';intervalMinutes=Number(document.getElementById('scheduleIntervalMinutes').value||60);}
+  else if(type==='daily'){scheduleType='Daily';hour=Number(document.getElementById('scheduleHour').value||9);minute=Number(document.getElementById('scheduleMinute').value||0);}
+  else if(type==='weekly'){scheduleType='Weekly';const sel=Array.from(document.querySelectorAll('.sched-dow:checked')).map(cb=>cb.value);daysOfWeek=sel.join(',');hour=Number(document.getElementById('scheduleHour').value||9);minute=Number(document.getElementById('scheduleMinute').value||0);}
+  else if(type==='monthlyDay'){scheduleType='MonthlyDay';dayOfMonth=Number(document.getElementById('scheduleDayOfMonth').value||1);hour=Number(document.getElementById('scheduleHour').value||9);minute=Number(document.getElementById('scheduleMinute').value||0);}
+  else if(type==='monthlyNth'){scheduleType='MonthlyNth';weekOfMonth=Number(document.getElementById('scheduleWeekOfMonth').value||1);dayOfWeek=Number(document.getElementById('scheduleDowSingle').value||1);hour=Number(document.getElementById('scheduleHour').value||9);minute=Number(document.getElementById('scheduleMinute').value||0);}
+  else if(type==='monthlyLastDay'){scheduleType='MonthlyLastDay';hour=Number(document.getElementById('scheduleHour').value||9);minute=Number(document.getElementById('scheduleMinute').value||0);}
+  const body={scheduleType,runAt,intervalMinutes,daysOfWeek,dayOfMonth,weekOfMonth,dayOfWeek,hour,minute,timeZoneId:timeZone,endAt,cronExpression:null};
+  const r = await api('/api/workflow/schedules/' + eid, { method: 'PUT', body: JSON.stringify(body) });
+  if(!r.ok){ showAlert(await r.text()); return; }
+  const modalEl=document.getElementById('scheduleWorkflowModal');
+  const modal=bootstrap.Modal.getInstance(modalEl);
+  if (modal) modal.hide();
+  location.reload();
+}
+</script>
+}

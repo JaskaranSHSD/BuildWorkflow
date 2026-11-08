@@ -11,7 +11,10 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options =>
+{
+    options.Filters.Add<BuildWorkflow.Filters.MustChangePasswordFilter>();
+});
 
 builder.Services.AddSession(options =>
 {
@@ -34,6 +37,8 @@ builder.Services.AddTransient<IAiChatConnector, OllamaConnector>();
 builder.Services.AddTransient<IAiChatConnector, OpenAIConnector>();
 builder.Services.AddSingleton<WorkflowRunQueue>();
 builder.Services.AddSingleton<WorkflowExecutionService>();
+builder.Services.AddSingleton<BuildWorkflow.Services.QdrantRagStore>();
+builder.Services.AddSingleton<BuildWorkflow.Services.RsaKeyService>();
 builder.Services.AddHostedService<WorkflowBackgroundService>();
 builder.Services.AddSingleton<AiConnectorFactory>();
 builder.Services.AddScoped<AICenterService>();
@@ -64,17 +69,27 @@ using (var scope = app.Services.CreateScope())
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "Name" character varying(128) NOT NULL,
                 "Slug" character varying(128) NULL,
+                "DisplayName" text NULL,
                 "IsActive" boolean NOT NULL DEFAULT TRUE,
                 "CreatedAt" timestamp with time zone NOT NULL
             );
             ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "FailedLoginAttempts" integer NOT NULL DEFAULT 0;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "LockoutEnd" timestamp with time zone NULL;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "MustChangePassword" boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "IsActive" boolean NOT NULL DEFAULT TRUE;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "MfaSecret" text NULL;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "MfaEnabled" boolean NOT NULL DEFAULT TRUE;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "AllowedFileExtensions" text NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_Username" ON "Users" ("Username");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_Email" ON "Users" ("Email") WHERE "Email" IS NOT NULL;
             ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "Tools" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "ToolGroups" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
-            ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
+            DROP TABLE IF EXISTS "RagChunks";
             ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
             ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
@@ -93,8 +108,6 @@ using (var scope = app.Services.CreateScope())
             ALTER TABLE "KnowledgeGroups" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
             ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
             ALTER TABLE "RagDocuments" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
-            ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
-            ALTER TABLE "RagChunks" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
             ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
             ALTER TABLE "UploadedFiles" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
             ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
@@ -103,8 +116,9 @@ using (var scope = app.Services.CreateScope())
             ALTER TABLE "ChatWorkflows" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
             ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "CreatedByUserId" uuid NULL;
             ALTER TABLE "ChatSessions" ADD COLUMN IF NOT EXISTS "UpdatedByUserId" uuid NULL;
-            ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "NextWorkflowId" uuid NULL;
-            ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "ParentRunId" uuid NULL;
+            ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "Description" text NULL;
+            ALTER TABLE "Workflows" ADD COLUMN IF NOT EXISTS "SystemInstruction" text NULL;
+            ALTER TABLE "WorkflowRuns" DROP COLUMN IF EXISTS "ParentRunId";
             ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "OutputSummary" text NULL;
             ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsTools" boolean NOT NULL DEFAULT TRUE;
             ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsImages" boolean NOT NULL DEFAULT FALSE;
@@ -122,8 +136,74 @@ using (var scope = app.Services.CreateScope())
                 "CreatedAt" timestamp with time zone NOT NULL
             );
             ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "KnowledgeGroupId" uuid NULL;
+            ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "ContextSummary" text NULL;
+            ALTER TABLE "WorkflowMessages" ADD COLUMN IF NOT EXISTS "WorkflowRunStepId" uuid NULL;
+            CREATE TABLE IF NOT EXISTS "WorkflowSteps" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "WorkflowId" uuid NOT NULL,
+                "Order" integer NOT NULL,
+                "Name" character varying(256) NOT NULL,
+                "UserInstruction" text NULL,
+                "ModelId" uuid NULL,
+                "RagBucketId" uuid NULL,
+                "IsActive" boolean NOT NULL DEFAULT TRUE,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS "WorkflowStepTools" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "WorkflowStepId" uuid NOT NULL,
+                "ToolId" uuid NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS "WorkflowStepRagBuckets" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "WorkflowStepId" uuid NOT NULL,
+                "RagBucketId" uuid NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS "WorkflowStepFiles" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "WorkflowStepId" uuid NOT NULL,
+                "UploadedFileId" uuid NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS "WorkflowRunSteps" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "WorkflowRunId" uuid NOT NULL,
+                "WorkflowStepId" uuid NOT NULL,
+                "Order" integer NOT NULL,
+                "Status" character varying(32) NOT NULL,
+                "StartedAt" timestamp with time zone NULL,
+                "CompletedAt" timestamp with time zone NULL,
+                "Error" text NULL,
+                "InputSummary" text NULL,
+                "OutputSummary" text NULL,
+                "WorkflowSessionId" uuid NULL
+            );
+            CREATE TABLE IF NOT EXISTS "ToolInvocationLogs" (
+                "Id" uuid NOT NULL PRIMARY KEY,
+                "ToolId" uuid NULL,
+                "ToolName" text NULL,
+                "ToolType" text NULL,
+                "UserId" uuid NULL,
+                "WorkflowRunId" uuid NULL,
+                "Status" character varying(32) NOT NULL DEFAULT 'Success',
+                "Input" text NULL,
+                "Output" text NULL,
+                "Error" text NULL,
+                "DurationMs" integer NULL,
+                "CreatedAt" timestamp with time zone NOT NULL
+            );
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "ScheduleType" character varying(32) NOT NULL DEFAULT 'Once';
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "DaysOfWeek" text NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "DayOfMonth" integer NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "WeekOfMonth" integer NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "DayOfWeek" integer NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "Hour" integer NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "Minute" integer NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "TimeZoneId" character varying(128) NULL;
+            ALTER TABLE "WorkflowSchedules" ADD COLUMN IF NOT EXISTS "EndAt" timestamp with time zone NULL;
         """);
 
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "Organizations" ADD COLUMN IF NOT EXISTS "DisplayName" text NULL; ALTER TABLE "Organizations" ADD COLUMN IF NOT EXISTS "AllowedFileExtensions" text NULL; ALTER TABLE "Organizations" ADD COLUMN IF NOT EXISTS "MaxUploadSizeBytes" bigint NOT NULL DEFAULT 10485760;""");
         var defaultOrg = db.Organizations.OrderBy(o => o.CreatedAt).FirstOrDefault();
         if (defaultOrg == null)
         {
@@ -167,43 +247,36 @@ using (var scope = app.Services.CreateScope())
             db.SaveChanges();
         }
 
-        var adminUser = db.Users.FirstOrDefault(u => u.Role == "OrgAdmin" || u.Role == "Admin");
-        if (adminUser != null)
+        foreach (var legacyWorkflow in db.Workflows.ToList())
         {
-            foreach (var orphan in db.Workflows.Where(w => w.Name.StartsWith("Sample Chain") && w.UserId == null).ToList())
+            if (db.WorkflowSteps.Any(s => s.WorkflowId == legacyWorkflow.Id))
             {
-                orphan.UserId = adminUser.Id;
+                continue;
             }
-            db.SaveChanges();
-        }
 
-        if (!db.Workflows.Any(w => w.Name == "Sample Chain A - Summarize"))
-        {
-            var sampleA = new WorkflowDefinition
+            var step = new WorkflowStep
             {
-                UserId = adminUser?.Id,
-                Name = "Sample Chain A - Summarize",
-                SystemInstruction = "You are a helpful AI assistant.",
-                UserInstruction = "Summarize the benefits of AI in three concise bullet points."
+                WorkflowId = legacyWorkflow.Id,
+                Order = 1,
+                Name = legacyWorkflow.Name + " Step",
+                UserInstruction = legacyWorkflow.UserInstruction,
+                ModelId = legacyWorkflow.ModelId,
+                RagBucketId = legacyWorkflow.RagBucketId,
+                IsActive = legacyWorkflow.IsActive
             };
-            var sampleB = new WorkflowDefinition
-            {
-                UserId = adminUser?.Id,
-                Name = "Sample Chain B - Draft Email",
-                SystemInstruction = "You are a helpful AI assistant.",
-                UserInstruction = "Using the summary from the previous workflow, draft a short professional email about AI benefits."
-            };
-            var sampleC = new WorkflowDefinition
-            {
-                UserId = adminUser?.Id,
-                Name = "Sample Chain C - Polish Email",
-                SystemInstruction = "You are a helpful AI assistant.",
-                UserInstruction = "Polish the prior email draft for clarity, tone, and grammar. Output the final version only."
-            };
-            db.Workflows.AddRange(sampleA, sampleB, sampleC);
+            db.WorkflowSteps.Add(step);
             db.SaveChanges();
-            sampleA.NextWorkflowId = sampleB.Id;
-            sampleB.NextWorkflowId = sampleC.Id;
+
+            foreach (var bucket in db.WorkflowRagBuckets.Where(b => b.WorkflowId == legacyWorkflow.Id).ToList())
+            {
+                db.WorkflowStepRagBuckets.Add(new WorkflowStepRagBucket { WorkflowStepId = step.Id, RagBucketId = bucket.RagBucketId });
+            }
+
+            foreach (var file in db.WorkflowFiles.Where(f => f.WorkflowId == legacyWorkflow.Id).ToList())
+            {
+                db.WorkflowStepFiles.Add(new WorkflowStepFile { WorkflowStepId = step.Id, UploadedFileId = file.UploadedFileId });
+            }
+
             db.SaveChanges();
         }
 

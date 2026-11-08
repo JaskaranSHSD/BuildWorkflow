@@ -1,5 +1,6 @@
 using BuildWorkflow.Data;
 using BuildWorkflow.Models;
+using BuildWorkflow.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using System.Text;
@@ -16,13 +17,15 @@ public class AICenterService
     private readonly AiConnectorFactory _factory;
     private readonly IConfiguration _configuration;
     private readonly Tools.DatabaseToolExecutor _toolExecutor;
+    private readonly QdrantRagStore _qdrant;
 
-    public AICenterService(AppDbContext db, AiConnectorFactory factory, IConfiguration configuration, Tools.DatabaseToolExecutor toolExecutor)
+    public AICenterService(AppDbContext db, AiConnectorFactory factory, IConfiguration configuration, Tools.DatabaseToolExecutor toolExecutor, QdrantRagStore qdrant)
     {
         _db = db;
         _factory = factory;
         _configuration = configuration;
         _toolExecutor = toolExecutor;
+        _qdrant = qdrant;
     }
 
     public async Task<AiChatResult> SendMessageAsync(Guid? userId, Guid? modelId, string message, IEnumerable<Guid>? attachedFileIds = null, Guid? sessionId = null, Guid? ragBucketId = null, IEnumerable<Guid>? selectedToolIds = null, IEnumerable<Guid>? selectedRagBucketIds = null, CancellationToken cancellationToken = default)
@@ -122,6 +125,13 @@ public class AICenterService
                 .Where(x => x.UserId == userId.Value)
                 .Select(x => x.RagBucketId)
                 .ToListAsync(cancellationToken);
+            if (selectedBucketIds.Count == 0)
+            {
+                selectedBucketIds = await _db.RagBuckets
+                    .Where(x => x.IsActive)
+                    .Select(x => x.Id)
+                    .ToListAsync(cancellationToken);
+            }
         }
         else
         {
@@ -134,7 +144,10 @@ public class AICenterService
         if (selectedRagBucketIds != null)
         {
             var selectedSet = selectedRagBucketIds.Where(id => id != Guid.Empty).ToHashSet();
-            selectedBucketIds = selectedBucketIds.Where(id => selectedSet.Contains(id)).ToList();
+            if (selectedSet.Count > 0)
+            {
+                selectedBucketIds = selectedBucketIds.Where(id => selectedSet.Contains(id)).ToList();
+            }
         }
 
         var maxChunksToScan = _configuration.GetValue<int?>("Rag:MaxChunksToScan") ?? 1000;
@@ -143,32 +156,15 @@ public class AICenterService
             maxChunksToScan = 1000;
         }
 
-        var ragChunks = await _db.RagChunks
-            .AsNoTracking()
-            .Where(x => selectedBucketIds.Contains(x.RagBucketId))
-            .OrderByDescending(x => x.CreatedAt)
-            .Take(maxChunksToScan)
-            .ToListAsync(cancellationToken);
-
         var endpoint = _configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
         var embeddingModel = _configuration["Ollama:EmbeddingModel"];
         var queryEmbedding = await BuildWorkflow.RAGPipeline.RagEmbeddingGenerator.GenerateAsync(endpoint, embeddingModel, originalMessage, cancellationToken);
 
-        IEnumerable<RagChunk> selectedChunks = ragChunks;
-        if (queryEmbedding != null && ragChunks.Any(c => c.Embedding != null))
-        {
-            selectedChunks = ragChunks
-                .Select(c => new { Chunk = c, Score = BuildWorkflow.RAGPipeline.RagEmbeddingGenerator.CosineSimilarity(queryEmbedding, (c.Embedding ?? Array.Empty<double>()).Select(v => (float)v).ToArray()) })
-                .OrderByDescending(x => x.Score)
-                .Take(8)
-                .Select(x => x.Chunk);
-        }
-        else
-        {
-            selectedChunks = ragChunks;
-        }
+        var maxChunks = maxChunksToScan <= 0 ? 1000 : maxChunksToScan;
+        float[]? qVector = queryEmbedding;
+        var selectedContents = await _qdrant.SearchAsync(selectedBucketIds, originalMessage, qVector, maxChunks, cancellationToken);
 
-        var ragContext = BuildWorkflow.RAGPipeline.RagContextBuilder.Build(originalMessage, selectedChunks.Select(x => x.Content));
+        var ragContext = BuildWorkflow.RAGPipeline.RagContextBuilder.Build(originalMessage, selectedContents);
 
         ChatSession chatSession;
         if (sessionId.HasValue)

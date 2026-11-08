@@ -1,0 +1,776 @@
+@{
+    var workflowId = (Guid)ViewBag.WorkflowId;
+    var models = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
+    var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
+    var buckets = ViewBag.RagBuckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+}
+<div class="container-fluid py-3">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Manage Workflow</h3>
+        <div>
+            <button class="btn btn-outline-success border border-success me-2" onclick="openShare(workflowId)">Share</button>
+            <button class="btn btn-outline-warning border border-warning me-2" onclick="openSchedule(workflowId)">Schedule</button>
+            <a class="btn btn-outline-info border border-info me-2" href="/Workflow/History?id=@workflowId">History</a>
+<button class="btn btn-outline-danger border border-danger me-2" onclick="clearWorkflowHistory()">Clear History</button>
+            <button id="runWorkflowBtn" class="btn btn-primary me-2" onclick="runWorkflow()">Run Workflow</button>
+            <a class="btn btn-outline-secondary" href="/Workflow">Back to Workflows</a>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <input type="hidden" id="workflowId" value="@workflowId" />
+            <div class="mb-2">
+                <label class="form-label">Workflow Name</label>
+                <input id="wfName" class="form-control" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Description</label>
+                <textarea id="wfDescription" class="form-control" rows="2"></textarea>
+            </div>
+            <div class="mb-2">
+                <label class="form-label">System Instruction</label>
+                <textarea id="wfSystem" class="form-control" rows="4"></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="saveWorkflow()">Save Workflow</button>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="mb-0">Steps</h5>
+        <button class="btn btn-success" onclick="openNewStep()">Add Step</button>
+    </div>
+    <div id="stepsList"></div>
+</div>
+
+<!-- Step modal -->
+<div class="modal fade" id="stepModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="stepModalTitle">Step</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="stepId" />
+                <div class="mb-2">
+                    <label class="form-label">Name</label>
+                    <input id="stepName" class="form-control" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">User Instruction</label>
+                    <textarea id="stepUser" class="form-control" rows="4"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">AI Model</label>
+                    <select id="stepModel" class="form-select">
+                        <option value="">Default model</option>
+                        @foreach (var m in models)
+                        {
+                            <option value="@m.Id">@m.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Tools</label>
+                    <div id="stepTools" class="border rounded p-2" style="max-height:160px; overflow:auto;">
+                        @foreach (var t in tools)
+                        {
+                            <div class="form-check">
+                                <input class="form-check-input step-tool" type="checkbox" value="@t.Id" id="steptool_@t.Id" />
+                                <label class="form-check-label" for="steptool_@t.Id">@t.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">RAG Buckets</label>
+                    <div id="stepBuckets" class="border rounded p-2" style="max-height:160px; overflow:auto;">
+                        @foreach (var b in buckets)
+                        {
+                            <div class="form-check">
+                                <input class="form-check-input step-bucket" type="checkbox" value="@b.Id" id="stepbucket_@b.Id" />
+                                <label class="form-check-label" for="stepbucket_@b.Id">@b.Name</label>
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Attach files</label>
+                    <input type="file" id="stepFileUpload" class="form-control" multiple accept="@((ViewBag.AllowedFileExtensions as string) ?? "")" @(string.IsNullOrWhiteSpace(ViewBag.AllowedFileExtensions as string) ? "disabled" : "") onchange="uploadStepFiles()" />
+@if (string.IsNullOrWhiteSpace(ViewBag.AllowedFileExtensions as string))
+{
+    <small class="text-muted d-block">File uploads are disabled by policy.</small>
+}
+                    <div id="stepFileList" class="mt-2 small"></div>
+                    <input type="hidden" id="stepFileIds" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" onclick="saveStep()">Save Step</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="shareWorkflowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Share Workflow</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="shareWfId" />
+          <div class="row g-2 mb-3">
+            <div class="col-md-9">
+              <select id="shareUserSelect" class="form-select"></select>
+            </div>
+            <div class="col-md-3">
+              <button type="button" class="btn btn-primary w-100" onclick="shareWorkflow()">Share</button>
+            </div>
+          </div>
+          <div id="shareList"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="scheduleWorkflowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Schedule Workflow</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="scheduleWfId" />
+          <div class="mb-2">
+            <label class="form-label">Schedule pattern</label>
+            <select id="scheduleType" class="form-select" onchange="toggleScheduleFields()">
+              <option value="once">Run once</option>
+              <option value="interval">Repeat every N minutes</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly (selected weekdays)</option>
+              <option value="monthlyDay">Monthly (day of month)</option>
+              <option value="monthlyNth">Monthly (nth weekday, e.g. 1st Monday)</option>
+              <option value="monthlyLastDay">Monthly (last day of month)</option>
+            </select>
+          </div>
+
+          <div class="mb-2" id="scheduleDateTimeGroup">
+            <label class="form-label">Start date &amp; time</label>
+            <input id="scheduleDateTime" type="datetime-local" class="form-control" />
+            <div class="form-text">Used as the first run for one-off schedules, or as the starting anchor/time-of-day for recurring patterns.</div>
+          </div>
+
+          <div class="mb-2 d-none" id="scheduleIntervalGroup">
+            <label class="form-label">Repeat every (minutes)</label>
+            <input id="scheduleIntervalMinutes" type="number" class="form-control" value="60" min="1" />
+          </div>
+
+          <div class="mb-2 d-none" id="scheduleTimeGroup">
+            <label class="form-label">Time of day (hour:minute)</label>
+            <div class="d-flex gap-2">
+              <input id="scheduleHour" type="number" class="form-control" min="0" max="23" value="9" />
+              <input id="scheduleMinute" type="number" class="form-control" min="0" max="59" value="0" />
+            </div>
+          </div>
+
+          <div class="mb-2 d-none" id="scheduleWeekDaysGroup">
+            <label class="form-label">Weekdays</label>
+            <div class="d-flex flex-wrap gap-2">
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="1" id="schedDow1"><label class="form-check-label" for="schedDow1">Mon</label></div>
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="2" id="schedDow2"><label class="form-check-label" for="schedDow2">Tue</label></div>
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="3" id="schedDow3"><label class="form-check-label" for="schedDow3">Wed</label></div>
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="4" id="schedDow4"><label class="form-check-label" for="schedDow4">Thu</label></div>
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="5" id="schedDow5"><label class="form-check-label" for="schedDow5">Fri</label></div>
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="6" id="schedDow6"><label class="form-check-label" for="schedDow6">Sat</label></div>
+              <div class="form-check"><input class="form-check-input sched-dow" type="checkbox" value="0" id="schedDow0"><label class="form-check-label" for="schedDow0">Sun</label></div>
+            </div>
+          </div>
+
+          <div class="mb-2 d-none" id="scheduleMonthDayGroup">
+            <label class="form-label">Day of month (1-31)</label>
+            <input id="scheduleDayOfMonth" type="number" class="form-control" min="1" max="31" value="1" />
+            <div class="form-text">If the month has fewer days, the last day of that month is used.</div>
+          </div>
+
+          <div class="mb-2 d-none" id="scheduleMonthNthGroup">
+            <label class="form-label">Week of month + weekday</label>
+            <div class="d-flex gap-2">
+              <select id="scheduleWeekOfMonth" class="form-select">
+                <option value="1">1st</option>
+                <option value="2">2nd</option>
+                <option value="3">3rd</option>
+                <option value="4">4th</option>
+                <option value="5">Last</option>
+              </select>
+              <select id="scheduleDowSingle" class="form-select">
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+                <option value="0">Sunday</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-2 d-none" id="scheduleEndGroup">
+            <label class="form-label">End at (optional)</label>
+            <input id="scheduleEndAt" type="datetime-local" class="form-control" />
+          </div>
+
+          <div id="scheduleList" class="mt-3"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" onclick="createSchedule()">Save Schedule</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+@section Scripts {
+<script>
+const api = (path, opts) => fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+const workflowId = document.getElementById('workflowId').value;
+let editingScheduleId = null;
+let currentSteps = [];
+let selectedStepFiles = [];
+
+async function runWorkflow() {
+    const btn = document.getElementById('runWorkflowBtn');
+    if (btn) { btn.disabled = true; btn.dataset.originalText = btn.innerHTML; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Starting...'; }
+    try {
+        const r = await api('/api/workflow/' + workflowId + '/run', { method: 'POST' });
+        if (!r.ok) throw new Error(await r.text());
+        const d = await r.json();
+        showAlert('Workflow started. Run queued: ' + (d.runId || ''));
+    } catch (error) {
+        showAlert('Could not start workflow: ' + (error && error.message ? error.message : error));
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = btn.dataset.originalText || 'Run Workflow'; }
+    }
+}
+
+async function clearWorkflowHistory() {
+    if (!confirm('Delete all run history for this workflow?')) return;
+    try {
+        const r = await api('/api/workflow/' + workflowId + '/runs', { method: 'DELETE' });
+        if (!r.ok) throw new Error(await r.text());
+        showAlert('Workflow history cleared.');
+    } catch (error) {
+        showAlert('Could not clear history: ' + (error && error.message ? error.message : error));
+    }
+}
+
+async function loadWorkflow() {
+    const r = await api('/api/workflow/' + workflowId);
+    const w = await r.json();
+    document.getElementById('wfName').value = w.name || '';
+    document.getElementById('wfDescription').value = w.description || '';
+    document.getElementById('wfSystem').value = w.systemInstruction || '';
+}
+
+async function saveWorkflow() {
+    await api('/api/workflow/' + workflowId, {
+        method: 'PUT',
+        body: JSON.stringify({
+            name: document.getElementById('wfName').value,
+            description: document.getElementById('wfDescription').value,
+            systemInstruction: document.getElementById('wfSystem').value,
+            userInstruction: document.getElementById('wfSystem').value ? '' : ''
+        })
+    });
+    showAlert('Saved.');
+    loadSteps();
+}
+
+async function loadSteps() {
+    const r = await api('/api/workflow/' + workflowId + '/steps');
+    const steps = await r.json();
+    currentSteps = steps;
+    let html = '<table class="table align-middle"><thead><tr><th>Order</th><th>Name</th><th>Model</th><th>Tools</th><th>Actions</th></tr></thead><tbody>';
+    for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        html += '<tr>';
+        html += '<td>' + (s.order ?? (i+1)) + '</td>';
+        html += '<td>' + escapeHtml(s.name || '') + '</td>';
+        html += '<td>' + (s.modelId ? s.modelId.substring(0,8) : 'Default') + '</td>';
+        html += '<td>' + ((s.toolIds || []).length) + '</td>';
+        html += '<td>';
+        html += '<button class="btn btn-sm btn-outline-secondary me-1" onclick="moveStep(' + i + ', -1)"' + (i===0?' disabled':'') + '>Up</button>';
+        html += '<button class="btn btn-sm btn-outline-secondary me-1" onclick="moveStep(' + i + ', 1)"' + (i===steps.length-1?' disabled':'') + '>Down</button>';
+        html += '<button class="btn btn-sm btn-outline-primary me-1" onclick="editStep(\'' + s.id + '\')">Edit</button>';
+        html += '<button class="btn btn-sm btn-outline-danger" onclick="deleteStep(\'' + s.id + '\')">Delete</button>';
+        html += '</td>';
+        html += '</tr>';
+    }
+    html += '</tbody></table>';
+    document.getElementById('stepsList').innerHTML = html;
+}
+
+async function moveStep(index, delta) {
+    const newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= currentSteps.length) return;
+    const reordered = currentSteps.slice();
+    const item = reordered.splice(index, 1)[0];
+    reordered.splice(newIndex, 0, item);
+    currentSteps = reordered;
+    const r = await api('/api/workflow/' + workflowId + '/steps/reorder', {
+        method: 'POST',
+        body: JSON.stringify(reordered.map(s => s.id))
+    });
+    if (!r.ok) { showAlert(await r.text()); return; }
+    loadSteps();
+}
+
+function openNewStep() {
+    document.getElementById('stepId').value = '';
+    document.getElementById('stepName').value = '';
+    document.getElementById('stepUser').value = '';
+    document.getElementById('stepModel').value = '';
+    document.getElementById('stepFileIds').value = '';
+    selectedStepFiles = [];
+    renderStepFileList();
+    const uploadInput = document.getElementById('stepFileUpload');
+    if (uploadInput) uploadInput.value = '';
+    document.querySelectorAll('.step-tool').forEach(cb => cb.checked = false);
+    document.querySelectorAll('.step-bucket').forEach(cb => cb.checked = false);
+    new bootstrap.Modal(document.getElementById('stepModal')).show();
+}
+
+async function editStep(id) {
+    const r = await api('/api/workflow/' + workflowId + '/steps');
+    const steps = await r.json();
+    const s = steps.find(x => x.id.toLowerCase() === id.toLowerCase());
+    if (!s) return;
+    document.getElementById('stepId').value = s.id;
+    document.getElementById('stepName').value = s.name || '';
+    document.getElementById('stepUser').value = s.userInstruction || '';
+    document.getElementById('stepModel').value = s.modelId || '';
+    document.getElementById('stepFileIds').value = (s.fileIds || []).join(',');
+    selectedStepFiles = (s.fileIds || []).map(id => ({ id: id, name: id }));
+    renderStepFileList();
+    document.querySelectorAll('.step-tool').forEach(cb => cb.checked = (s.toolIds || []).some(t => t.toLowerCase() === cb.value.toLowerCase()));
+    document.querySelectorAll('.step-bucket').forEach(cb => cb.checked = (s.ragBucketIds || []).some(b => b.toLowerCase() === cb.value.toLowerCase()));
+    new bootstrap.Modal(document.getElementById('stepModal')).show();
+}
+
+async function saveStep() {
+    const id = document.getElementById('stepId').value;
+    const toolIds = Array.from(document.querySelectorAll('.step-tool:checked')).map(cb => cb.value);
+    const bucketIds = Array.from(document.querySelectorAll('.step-bucket:checked')).map(cb => cb.value);
+    const fileIds = document.getElementById('stepFileIds').value.split(',').map(x => x.trim()).filter(Boolean);
+    const body = {
+        name: document.getElementById('stepName').value,
+        userInstruction: document.getElementById('stepUser').value,
+        modelId: document.getElementById('stepModel').value || null,
+        ragBucketId: bucketIds.length ? bucketIds[0] : null
+    };
+    if (id) {
+        await api('/api/workflow/steps/' + id, { method: 'PUT', body: JSON.stringify(body) });
+        await api('/api/workflow/steps/' + id + '/tools', { method: 'POST', body: JSON.stringify(toolIds) });
+        await api('/api/workflow/steps/' + id + '/ragbuckets', { method: 'POST', body: JSON.stringify(bucketIds) });
+        await api('/api/workflow/steps/' + id + '/files', { method: 'PUT', body: JSON.stringify(fileIds) });
+    } else {
+        const r = await api('/api/workflow/' + workflowId + '/steps', { method: 'POST', body: JSON.stringify(body) });
+        const created = await r.json();
+        await api('/api/workflow/steps/' + created.id + '/tools', { method: 'POST', body: JSON.stringify(toolIds) });
+        await api('/api/workflow/steps/' + created.id + '/ragbuckets', { method: 'POST', body: JSON.stringify(bucketIds) });
+        for (const fid of fileIds) await api('/api/workflow/steps/' + created.id + '/files', { method: 'POST', body: JSON.stringify(fid) });
+    }
+    bootstrap.Modal.getInstance(document.getElementById('stepModal')).hide();
+    loadSteps();
+}
+
+async function deleteStep(id) {
+    if (!confirm('Delete this step?')) return;
+    await api('/api/workflow/steps/' + id, { method: 'DELETE' });
+    loadSteps();
+}
+
+async function uploadStepFiles() {
+    const input = document.getElementById('stepFileUpload');
+    if (!input || !input.files.length) return;
+    for (const f of Array.from(input.files)) {
+        const allowed = (input.accept || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+        const ext = ('.' + (f.name.split('.').pop() || '')).toLowerCase();
+        const maxSize = @(ViewBag.MaxUploadSizeBytes ?? 10485760);
+        if (allowed.length > 0 && !allowed.includes(ext)) { showAlert('File type is not allowed: ' + f.name); continue; }
+        if (maxSize && f.size > maxSize) { showAlert('File is too large: ' + f.name); continue; }
+        const form = new FormData();
+        form.append('file', f);
+        form.append('sessionKey', workflowId);
+        const r = await fetch('/api/files/upload', { method: 'POST', body: form, headers: {} });
+        if (!r.ok) { showAlert('Failed to upload ' + f.name + ': ' + await r.text()); continue; }
+        const d = await r.json();
+        selectedStepFiles.push({ id: d.fileId, name: d.fileName || f.name });
+    }
+    syncStepFileIds();
+    renderStepFileList();
+    input.value = '';
+}
+
+function syncStepFileIds() {
+    document.getElementById('stepFileIds').value = selectedStepFiles.map(x => x.id).join(',');
+}
+
+function renderStepFileList() {
+    const el = document.getElementById('stepFileList');
+    if (!el) return;
+    el.innerHTML = selectedStepFiles.map((f, i) =>
+        '<span class="badge text-bg-light border me-1 mb-1">' + escapeHtml(f.name) +
+        ' <button type="button" class="btn-close btn-close-sm ms-1" onclick="removeStepFile(' + i + ')"></button></span>').join('');
+}
+
+function removeStepFile(i) {
+    selectedStepFiles.splice(i, 1);
+    syncStepFileIds();
+    renderStepFileList();
+}
+
+function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function loadShareUsers() {
+  const r = await api('/api/users');
+  if (!r.ok) return [];
+  return await r.json();
+}
+
+async function loadShares(id) {
+  const r = await api('/api/workflow/' + id + '/shares');
+  if (!r.ok) return [];
+  return await r.json();
+}
+
+async function openShare(id) {
+  document.getElementById('shareWfId').value = id;
+  const users = await loadShareUsers();
+  const select = document.getElementById('shareUserSelect');
+  select.innerHTML = '';
+  for (const u of users) {
+    const option = document.createElement('option');
+    option.value = u.id;
+    option.textContent = (u.fullName && u.fullName !== u.username) ? u.fullName + ' (' + u.username + ')' : u.username;
+    select.appendChild(option);
+  }
+  await renderShares(id);
+  const modal = new bootstrap.Modal(document.getElementById('shareWorkflowModal'));
+  modal.show();
+}
+
+async function renderShares(id) {
+  const shares = await loadShares(id);
+  const container = document.getElementById('shareList');
+  if (!shares.length) {
+    container.innerHTML = '<div class="text-muted small fst-italic">Not shared with anyone yet.</div>';
+    return;
+  }
+  let html = '<table class="table table-sm"><thead><tr><th>User</th><th>Permission</th><th></th></tr></thead><tbody>';
+  for (const s of shares) {
+    html += '<tr><td>' + (s.fullName || s.userName) + '</td><td>' + s.permission + '</td><td><button class="btn btn-sm btn-danger" type="button" onclick="revokeShare(\'' + id + '\',\'' + s.id + '\')">Revoke</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function shareWorkflow() {
+  const id = document.getElementById('shareWfId').value;
+  const userId = document.getElementById('shareUserSelect').value;
+  const r = await api('/api/workflow/' + id + '/shares', { method: 'POST', body: JSON.stringify({ userId }) });
+  if (!r.ok) { showAlert(await r.text()); return; }
+  await renderShares(id);
+}
+
+async function revokeShare(id, shareId) {
+  const r = await api('/api/workflow/' + id + '/shares/' + shareId, { method: 'DELETE' });
+  if (!r.ok) { showAlert(await r.text()); return; }
+  await renderShares(id);
+}
+
+function toggleScheduleFields() {
+  const type = document.getElementById('scheduleType').value;
+  const show = (id, cond) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (cond) el.classList.remove('d-none'); else el.classList.add('d-none');
+  };
+  show('scheduleIntervalGroup', type === 'interval');
+  show('scheduleTimeGroup', ['daily','weekly','monthlyDay','monthlyNth','monthlyLastDay'].includes(type));
+  show('scheduleWeekDaysGroup', type === 'weekly');
+  show('scheduleMonthDayGroup', type === 'monthlyDay');
+  show('scheduleMonthNthGroup', type === 'monthlyNth');
+  show('scheduleEndGroup', type !== 'once');
+}
+
+async function loadSchedules(id) {
+  const r = await api('/api/workflow/' + id + '/schedules');
+  if (!r.ok) return [];
+  return await r.json();
+}
+
+async function renderSchedules(id) {
+  const schedules = await loadSchedules(id);
+  const container = document.getElementById('scheduleList');
+  if (!schedules.length) {
+    container.innerHTML = '<div class="text-muted small fst-italic">No schedules yet.</div>';
+    return;
+  }
+  let html = '<table class="table table-sm"><thead><tr><th>Pattern</th><th>Next run</th><th></th></tr></thead><tbody>';
+  for (const s of schedules) {
+    const enabled = s.enabled ? 'Enabled' : 'Disabled';
+    const pattern = (s.scheduleType || 'Once') + (s.intervalMinutes ? ' / ' + s.intervalMinutes + 'm' : '');
+    html += '<tr><td>' + pattern + '</td><td>' + (s.nextRunAt || s.runAt || '-') + ' (' + enabled + ')</td><td><button class="btn btn-sm btn-outline-warning me-1" type="button" onclick="openEditSchedule(' + JSON.stringify(s).replace(/"/g,'&quot;') + ')">Edit</button><button class="btn btn-sm btn-danger" type="button" onclick="deleteSchedule(\'' + id + '\',\'' + s.id + '\')">Delete</button></td></tr>';
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+
+
+function fillScheduleModal(s) {
+  editingScheduleId = (s && s.id) ? s.id : null;
+  document.getElementById('scheduleWfId').value = workflowId;
+  document.getElementById('scheduleType').value = mapScheduleType(s);
+  toggleScheduleFields();
+  document.getElementById('scheduleIntervalMinutes').value = (s && s.intervalMinutes) ? s.intervalMinutes : 60;
+  document.getElementById('scheduleHour').value = (s && s.hour != null) ? s.hour : 9;
+  document.getElementById('scheduleMinute').value = (s && s.minute != null) ? s.minute : 0;
+  document.getElementById('scheduleDayOfMonth').value = (s && s.dayOfMonth) ? s.dayOfMonth : 1;
+  document.getElementById('scheduleWeekOfMonth').value = (s && s.weekOfMonth) ? s.weekOfMonth : 1;
+  document.getElementById('scheduleDowSingle').value = (s && s.dayOfWeek != null) ? s.dayOfWeek : 1;
+  document.getElementById('scheduleEndAt').value = '';
+  const rr = (s && (s.runAt || s.RunAt || s.nextRunAt || s.NextRunAt));
+  if (rr) document.getElementById('scheduleDateTime').value = new Date(rr).toISOString().slice(0,16);
+  document.querySelectorAll('.sched-dow').forEach(cb => cb.checked = false);
+  if (s && s.daysOfWeek) {
+    String(s.daysOfWeek).split(',').forEach(d => {
+      const cb = document.querySelector('.sched-dow[value="' + d.trim() + '"]');
+      if (cb) cb.checked = true;
+    });
+  }
+}
+
+function mapScheduleType(s) {
+  if (!s) return 'once';
+  const t = (s.scheduleType || '').toLowerCase();
+  if (t === 'interval') return 'interval';
+  if (t === 'daily') return 'daily';
+  if (t === 'weekly') return 'weekly';
+  if (t === 'monthlyday') return 'monthlyDay';
+  if (t === 'monthlynth') return 'monthlyNth';
+  if (t === 'monthlylastday') return 'monthlyLastDay';
+  return 'once';
+}
+
+async function openEditSchedule(s) {
+  editingScheduleId = (s && s.id) ? s.id : null;
+  fillScheduleModal(s);
+  await renderSchedules(workflowId);
+  const el = document.getElementById('scheduleWorkflowModal');
+  let instance = bootstrap.Modal.getInstance(el);
+  if (!instance) instance = new bootstrap.Modal(el);
+  if (!el.classList.contains('show')) instance.show();
+}
+
+async function openSchedule(id) {
+  editingScheduleId = null;
+  document.getElementById('scheduleWfId').value = id;
+  document.getElementById('scheduleType').value = 'once';
+  toggleScheduleFields();
+  document.getElementById('scheduleDateTime').value = '';
+  document.getElementById('scheduleIntervalMinutes').value = 60;
+  document.getElementById('scheduleHour').value = 9;
+  document.getElementById('scheduleMinute').value = 0;
+  document.querySelectorAll('.sched-dow').forEach(cb => cb.checked = false);
+  document.getElementById('scheduleDayOfMonth').value = 1;
+  document.getElementById('scheduleWeekOfMonth').value = 1;
+  document.getElementById('scheduleDowSingle').value = 1;
+  document.getElementById('scheduleEndAt').value = '';
+  editingScheduleId = null;
+  await renderSchedules(id);
+  const el = document.getElementById('scheduleWorkflowModal');
+  let instance = bootstrap.Modal.getInstance(el);
+  if (!instance) instance = new bootstrap.Modal(el);
+  instance.show();
+}
+
+async function createSchedule() {
+  const id = document.getElementById('scheduleWfId').value;
+  const type = document.getElementById('scheduleType').value;
+  const dateTimeValue = document.getElementById('scheduleDateTime').value;
+  const runAt = dateTimeValue ? new Date(dateTimeValue).toISOString() : null;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  let scheduleType = 'Once';
+  let intervalMinutes = null;
+  let daysOfWeek = null;
+  let dayOfMonth = null;
+  let weekOfMonth = null;
+  let dayOfWeek = null;
+  let hour = null;
+  let minute = null;
+  let endAt = null;
+
+  const endVal = document.getElementById('scheduleEndAt').value;
+  if (endVal) endAt = new Date(endVal).toISOString();
+
+  if (type === 'interval') {
+    scheduleType = 'Interval';
+    intervalMinutes = Number(document.getElementById('scheduleIntervalMinutes').value || 60);
+  } else if (type === 'daily') {
+    scheduleType = 'Daily';
+    hour = Number(document.getElementById('scheduleHour').value || 9);
+    minute = Number(document.getElementById('scheduleMinute').value || 0);
+  } else if (type === 'weekly') {
+    scheduleType = 'Weekly';
+    const selected = Array.from(document.querySelectorAll('.sched-dow:checked')).map(cb => cb.value);
+    daysOfWeek = selected.join(',');
+    hour = Number(document.getElementById('scheduleHour').value || 9);
+    minute = Number(document.getElementById('scheduleMinute').value || 0);
+  } else if (type === 'monthlyDay') {
+    scheduleType = 'MonthlyDay';
+    dayOfMonth = Number(document.getElementById('scheduleDayOfMonth').value || 1);
+    hour = Number(document.getElementById('scheduleHour').value || 9);
+    minute = Number(document.getElementById('scheduleMinute').value || 0);
+  } else if (type === 'monthlyNth') {
+    scheduleType = 'MonthlyNth';
+    weekOfMonth = Number(document.getElementById('scheduleWeekOfMonth').value || 1);
+    dayOfWeek = Number(document.getElementById('scheduleDowSingle').value || 1);
+    hour = Number(document.getElementById('scheduleHour').value || 9);
+    minute = Number(document.getElementById('scheduleMinute').value || 0);
+  } else if (type === 'monthlyLastDay') {
+    scheduleType = 'MonthlyLastDay';
+    hour = Number(document.getElementById('scheduleHour').value || 9);
+    minute = Number(document.getElementById('scheduleMinute').value || 0);
+  } else {
+    scheduleType = 'Once';
+  }
+
+  const body = {
+    scheduleType,
+    runAt,
+    intervalMinutes,
+    daysOfWeek,
+    dayOfMonth,
+    weekOfMonth,
+    dayOfWeek,
+    hour,
+    minute,
+    timeZoneId: timeZone,
+    endAt,
+    cronExpression: null
+  };
+
+  let r;
+  if (editingScheduleId) {
+    r = await api('/api/workflow/schedules/' + editingScheduleId, { method: 'PUT', body: JSON.stringify(body) });
+  } else {
+    r = await api('/api/workflow/' + id + '/schedule', { method: 'POST', body: JSON.stringify(body) });
+  }
+  if (!r.ok) { showAlert(await r.text()); return; }
+  await renderSchedules(id);
+}
+
+async function deleteSchedule(workflowId, scheduleId) {
+  const r = await api('/api/workflow/schedules/' + scheduleId, { method: 'DELETE' });
+  if (!r.ok) { showAlert(await r.text()); return; }
+  await renderSchedules(workflowId);
+}
+
+function showStartedModal(message) {
+  let element = document.getElementById('runStartedModal');
+  if (!element) {
+    element = document.createElement('div');
+    element.id = 'runStartedModal';
+    element.className = 'modal fade';
+    element.tabIndex = -1;
+    element.innerHTML = '<div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Workflow status</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button></div></div></div>';
+    document.body.appendChild(element);
+  }
+  element.querySelector('.modal-body').textContent = message;
+  const modal = new bootstrap.Modal(element);
+  modal.show();
+}
+
+async function runNow(id, button){
+  if (button) {
+    button.disabled = true;
+    button.dataset.originalText = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Starting...';
+  }
+  let runId = null;
+  try {
+    const r = await api('/api/workflow/'+id+'/run', {method:'POST'});
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    runId = d.runId;
+    if (button) {
+      button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+      button.classList.remove('btn-primary');
+      button.classList.add('btn-secondary');
+    }
+    showStartedModal('Workflow started. Run queued: ' + runId);
+  } catch (error) {
+    showStartedModal('Could not start workflow: ' + (error && error.message ? error.message : error));
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = button.dataset.originalText || 'Run';
+      button.classList.remove('btn-secondary');
+      button.classList.add('btn-primary');
+    }
+    return;
+  }
+  load();
+  setTimeout(() => {
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = button.dataset.originalText || 'Run';
+      button.classList.remove('btn-secondary');
+      button.classList.add('btn-primary');
+    }
+  }, 3000);
+}
+
+async function load(){
+  const r = await api('/api/workflow');
+  const data = await r.json();
+  let html = '<table class="table align-middle"><thead><tr><th>Workflow</th><th>Tools</th><th>Runs</th><th>Actions</th></tr></thead><tbody>';
+
+  for (const w of data) {
+    let actionButtons = '';
+    actionButtons += '<a class="btn btn-sm btn-outline-secondary me-1" href="/Workflow/Manage?id=' + w.id + '">Manage</a>';
+
+    html += '<tr>';
+    html += '<td><strong>' + htmlSafe(w.name) + '</strong></td>';
+    html += '<td>' + (w.toolCount || 0) + '</td>';
+    html += '<td>' + (w.runCount || 0) + '</td>';
+    html += '<td>' + actionButtons + '</td>';
+    html += '</tr>';
+
+  }
+  html += '</tbody></table>';
+  document.getElementById('list').innerHTML = html;
+}
+
+loadWorkflow();
+loadSteps();
+const params = new URLSearchParams(location.search);
+const sid = params.get('scheduleId');
+if (sid) {
+  (async () => {
+    const schedules = await loadSchedules(workflowId);
+    const target = (schedules || []).find(x => String(x.id).toLowerCase() === sid.toLowerCase());
+    if (target) openEditSchedule(target);
+  })();
+}
+</script>
+}

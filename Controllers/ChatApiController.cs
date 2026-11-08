@@ -1,5 +1,6 @@
 using BuildWorkflow.AICenter;
 using BuildWorkflow.Data;
+using BuildWorkflow.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,15 +12,18 @@ namespace BuildWorkflow.Controllers;
 [Route("api")]
 public class ChatApiController : ControllerBase
 {
+    public record KnowledgeSearchRequest(string Query, Guid[]? BucketIds);
     private readonly AICenterService _aiCenter;
     private readonly AppDbContext _db;
     private readonly IConfiguration _configuration;
+    private readonly QdrantRagStore _qdrant;
 
-    public ChatApiController(AICenterService aiCenter, AppDbContext db, IConfiguration configuration)
+    public ChatApiController(AICenterService aiCenter, AppDbContext db, IConfiguration configuration, QdrantRagStore qdrant)
     {
         _aiCenter = aiCenter;
         _db = db;
         _configuration = configuration;
+        _qdrant = qdrant;
     }
 
     [HttpPost("chat")]
@@ -37,6 +41,15 @@ public class ChatApiController : ControllerBase
             userId = parsedUserId;
         }
 
+        if (request.AttachedFileIds != null && request.AttachedFileIds.Length > 0)
+        {
+            var validationResult = await ValidateAttachmentLimitsAsync(request.AttachedFileIds, cancellationToken);
+            if (validationResult != null)
+            {
+                return validationResult;
+            }
+        }
+
         try
         {
             var result = await _aiCenter.SendMessageAsync(userId, request.ModelId, request.Message, request.AttachedFileIds, request.SessionId, request.RagBucketId, request.SelectedToolIds, request.SelectedRagBucketIds, CancellationToken.None);
@@ -46,6 +59,46 @@ public class ChatApiController : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    [HttpPost("knowledge/search")]
+    public async Task<IActionResult> SearchKnowledge([FromBody] KnowledgeSearchRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Query))
+            return BadRequest(new { error = "Query is required." });
+
+        Guid? userId = null;
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (Guid.TryParse(userIdValue, out var parsedUserId)) userId = parsedUserId;
+
+        var isAdmin = User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin");
+        var available = isAdmin
+            ? await _db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken)
+            : (userId.HasValue
+                ? await _db.UserRagBuckets.Where(a => a.UserId == userId.Value).Select(a => a.RagBucketId).ToListAsync(cancellationToken)
+                : await _db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken));
+        if (!isAdmin && userId.HasValue && available.Count == 0)
+        {
+            available = await _db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken);
+        }
+
+        var requested = (request.BucketIds ?? Array.Empty<Guid>()).Where(id => id != Guid.Empty).Distinct().ToList();
+        var bucketIds = requested.Count > 0 ? requested.Intersect(available).ToList() : available;
+        if (bucketIds.Count == 0) return Ok(Array.Empty<object>());
+
+        var endpoint = _configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
+        var embeddingModel = _configuration["Ollama:EmbeddingModel"];
+        var queryEmbedding = await BuildWorkflow.RAGPipeline.RagEmbeddingGenerator.GenerateAsync(endpoint, embeddingModel, request.Query, cancellationToken);
+
+        var hits = await _qdrant.SearchHitsAsync(bucketIds, request.Query, queryEmbedding, 25, cancellationToken);
+        var result = hits.Select(h => new
+        {
+            score = h.Score,
+            bucketId = h.BucketId,
+            documentId = h.DocumentId,
+            content = h.Content.Length > 1200 ? h.Content.Substring(0, 1200) + "..." : h.Content
+        });
+        return Ok(result);
     }
 
     [HttpPost("chat/stream")]
@@ -63,6 +116,16 @@ public class ChatApiController : ControllerBase
         if (Guid.TryParse(userIdValue, out var parsedUserId))
         {
             userId = parsedUserId;
+        }
+
+        if (request.AttachedFileIds != null && request.AttachedFileIds.Length > 0)
+        {
+            var validationResult = await ValidateAttachmentLimitsAsync(request.AttachedFileIds, cancellationToken);
+            if (validationResult != null)
+            {
+                await validationResult.ExecuteResultAsync(ControllerContext);
+                return;
+            }
         }
 
         Response.Headers["Content-Type"] = "text/event-stream";
@@ -154,6 +217,25 @@ public class ChatApiController : ControllerBase
             .ToList();
 
         return Ok(messages);
+    }
+
+    private async Task<IActionResult?> ValidateAttachmentLimitsAsync(Guid[] attachedFileIds, CancellationToken cancellationToken)
+    {
+        var uploadedFiles = await _db.UploadedFiles
+            .AsNoTracking()
+            .Where(f => attachedFileIds.Contains(f.Id))
+            .Select(f => f.ContentType)
+            .ToListAsync(cancellationToken);
+
+        var imageCount = uploadedFiles.Count(ct => !string.IsNullOrWhiteSpace(ct) && ct.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+        var fileCount = uploadedFiles.Count - imageCount;
+
+        if (imageCount > 2 || fileCount > 2)
+        {
+            return BadRequest(new { error = "You can attach at most 2 files and 2 images per chat message." });
+        }
+
+        return null;
     }
 
     private Guid? ParseUserId()

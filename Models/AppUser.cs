@@ -24,6 +24,20 @@ public class AppUser
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    public int FailedLoginAttempts { get; set; }
+
+    public DateTimeOffset? LockoutEnd { get; set; }
+
+    public bool MustChangePassword { get; set; }
+
+    public bool IsActive { get; set; } = true;
+
+    public string? AllowedFileExtensions { get; set; }
+
+    public string? MfaSecret { get; set; }
+
+    public bool MfaEnabled { get; set; } = true;
+
     public bool IsAdmin => Role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
         || Role.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase)
         || Role.Equals("PlatformAdmin", StringComparison.OrdinalIgnoreCase);

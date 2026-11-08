@@ -4,12 +4,65 @@
     var models = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
     var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
     var buckets = ViewBag.Buckets as List<BuildWorkflow.Models.RagBucket> ?? new();
+    var orgName = ViewBag.OrganizationName as string;
 }
 <div class="container py-4">
+    @if (TempData["ProfileMessage"] != null)
+    {
+        <div class="alert alert-success">@TempData["ProfileMessage"]</div>
+    }
+    @if (TempData["ProfileError"] != null)
+    {
+        <div class="alert alert-danger">@TempData["ProfileError"]</div>
+    }
+
     <div class="card p-4 mb-4">
         <h2 class="mb-1">Account Profile</h2>
         <p class="text-muted mb-0">Signed in as @(user?.Username ?? User.Identity?.Name). Role: @(user?.Role ?? "User").</p>
+        @if (user?.Role == "PlatformAdmin")
+        {
+            <p class="mt-2 mb-0"><strong>MFA fixed code:</strong> @BuildWorkflow.Services.MfaHelper.PlatformCode()</p>
+        }
     </div>
+
+    <div class="card p-4 mb-4">
+        <h5 class="mb-3">Account Details</h5>
+        <dl class="row mb-0">
+            <dt class="col-sm-3">Username</dt>
+            <dd class="col-sm-9">@(user?.Username ?? "-")</dd>
+            <dt class="col-sm-3">Full Name</dt>
+            <dd class="col-sm-9">@(user?.FullName ?? "-")</dd>
+            <dt class="col-sm-3">Email</dt>
+            <dd class="col-sm-9">@(user?.Email ?? "-")</dd>
+            <dt class="col-sm-3">Organization</dt>
+            <dd class="col-sm-9">@(orgName ?? "None")</dd>
+            <dt class="col-sm-3">Role</dt>
+            <dd class="col-sm-9">@(user?.Role ?? "-")</dd>
+        </dl>
+    </div>
+
+    <div class="card p-4 mb-4">
+        <h5 class="mb-3">Change Password</h5>
+        <form asp-controller="Account" asp-action="ChangePassword" method="post" class="row g-3">
+            @Html.AntiForgeryToken()
+            <div class="col-md-4">
+                <label class="form-label">Current Password</label>
+                <input type="password" name="currentPassword" class="form-control" required />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">New Password</label>
+                <input type="password" name="newPassword" class="form-control" required pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="Password must be at least 8 characters and include uppercase, lowercase, number, and special character." />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Confirm New Password</label>
+                <input type="password" name="confirmPassword" class="form-control" required />
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Update Password</button>
+            </div>
+        </form>
+    </div>
+
     <div class="row g-3">
         <div class="col-md-4">
             <div class="card p-3 h-100">

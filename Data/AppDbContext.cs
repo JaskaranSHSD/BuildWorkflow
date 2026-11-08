@@ -32,7 +32,6 @@ public class AppDbContext : DbContext
 
     public DbSet<KnowledgeGroup> KnowledgeGroups => Set<KnowledgeGroup>();
     public DbSet<RagDocument> RagDocuments => Set<RagDocument>();
-    public DbSet<RagChunk> RagChunks => Set<RagChunk>();
 
     public DbSet<UserToolPermission> UserToolPermissions => Set<UserToolPermission>();
 
@@ -48,13 +47,18 @@ public class AppDbContext : DbContext
     public DbSet<ChatWorkflowFile> ChatWorkflowFiles => Set<ChatWorkflowFile>();
 
     public DbSet<WorkflowDefinition> Workflows => Set<WorkflowDefinition>();
-    public DbSet<WorkflowTool> WorkflowTools => Set<WorkflowTool>();
     public DbSet<WorkflowFile> WorkflowFiles => Set<WorkflowFile>();
     public DbSet<WorkflowRagBucket> WorkflowRagBuckets => Set<WorkflowRagBucket>();
     public DbSet<WorkflowSession> WorkflowSessions => Set<WorkflowSession>();
     public DbSet<WorkflowMessage> WorkflowMessages => Set<WorkflowMessage>();
     public DbSet<WorkflowRun> WorkflowRuns => Set<WorkflowRun>();
+    public DbSet<WorkflowRunStep> WorkflowRunSteps => Set<WorkflowRunStep>();
+    public DbSet<WorkflowStep> WorkflowSteps => Set<WorkflowStep>();
+    public DbSet<WorkflowStepTool> WorkflowStepTools => Set<WorkflowStepTool>();
+    public DbSet<WorkflowStepRagBucket> WorkflowStepRagBuckets => Set<WorkflowStepRagBucket>();
+    public DbSet<WorkflowStepFile> WorkflowStepFiles => Set<WorkflowStepFile>();
     public DbSet<WorkflowSchedule> WorkflowSchedules => Set<WorkflowSchedule>();
+    public DbSet<ToolInvocationLog> ToolInvocationLogs => Set<ToolInvocationLog>();
 
     public DbSet<WorkflowShare> WorkflowShares => Set<WorkflowShare>();
 
@@ -76,6 +80,7 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Username).IsUnique();
+            entity.HasIndex(e => e.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL");
             entity.Property(e => e.Username).HasMaxLength(128).IsRequired();
             entity.Property(e => e.Password).HasMaxLength(512).IsRequired();
             entity.Property(e => e.Role).HasMaxLength(32).IsRequired();
@@ -180,15 +185,6 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.CreatedAt);
         });
 
-        modelBuilder.Entity<RagChunk>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Content).IsRequired();
-            entity.HasIndex(e => e.RagBucketId);
-            entity.HasIndex(e => e.RagDocumentId);
-            entity.HasIndex(e => e.CreatedAt);
-        });
-
         modelBuilder.Entity<SftpToolConfiguration>(entity =>
         {
             entity.HasKey(e => e.ToolId);
@@ -219,7 +215,6 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.UserInstruction).IsRequired();
         });
 
         modelBuilder.Entity<WorkflowMessage>(entity =>
@@ -235,10 +230,9 @@ public class AppDbContext : DbContext
             entity.HasOne<WorkflowDefinition>().WithMany().HasForeignKey(e => e.WorkflowId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<WorkflowTool>(entity =>
+        modelBuilder.Entity<ToolInvocationLog>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasOne<WorkflowDefinition>().WithMany().HasForeignKey(e => e.WorkflowId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WorkflowRagBucket>(entity =>
@@ -251,6 +245,39 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasOne<WorkflowDefinition>().WithMany().HasForeignKey(e => e.WorkflowId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkflowStep>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(256).IsRequired();
+            entity.HasOne<WorkflowDefinition>().WithMany(w => w.Steps).HasForeignKey(e => e.WorkflowId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.WorkflowId, e.Order });
+        });
+
+        modelBuilder.Entity<WorkflowStepTool>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne<WorkflowStep>().WithMany().HasForeignKey(e => e.WorkflowStepId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkflowStepRagBucket>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne<WorkflowStep>().WithMany().HasForeignKey(e => e.WorkflowStepId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkflowStepFile>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne<WorkflowStep>().WithMany().HasForeignKey(e => e.WorkflowStepId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkflowRunStep>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Status).HasMaxLength(32).IsRequired();
+            entity.HasOne<WorkflowRun>().WithMany(r => r.RunSteps).HasForeignKey(e => e.WorkflowRunId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WorkflowRun>(entity =>

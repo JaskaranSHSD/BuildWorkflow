@@ -71,6 +71,13 @@
     </tbody>
 </table>
 
+<form method="get" asp-action="RagBuckets" class="mb-3">
+    <div class="input-group">
+        <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search buckets by name or description…" />
+        <button class="btn btn-outline-secondary" type="submit">Search</button>
+    </div>
+</form>
+<p class="small text-muted mb-2">Total records: @(ViewBag.TotalCount ?? 0)</p>
 @if ((int)(ViewBag.TotalPages ?? 1) > 1)
 {
     <nav class="mt-3">
@@ -78,7 +85,7 @@
             @for (var p = 1; p <= (int)ViewBag.TotalPages; p++)
             {
                 <li class="page-item @(p == (int)ViewBag.Page ? "active" : "")">
-                    <a class="page-link" asp-action="RagBuckets" asp-route-page="@p">@p</a>
+                    <a class="page-link" asp-action="RagBuckets" asp-route-page="@p" asp-route-search="@ViewBag.Search">@p</a>
                 </li>
             }
         </ul>

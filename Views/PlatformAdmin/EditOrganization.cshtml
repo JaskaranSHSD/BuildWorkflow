@@ -1,0 +1,53 @@
+@model BuildWorkflow.Models.Organization
+@{
+    ViewData["Title"] = "Edit Organization";
+}
+<h2 class="mb-3">Edit Organization</h2>
+<div class="card mb-3">
+    <div class="card-body">
+        <form asp-controller="PlatformAdmin" asp-action="EditOrganization" method="post">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="id" value="@Model.Id" />
+            <div class="mb-3">
+                <label class="form-label">Organization Name</label>
+                <input name="name" class="form-control" value="@Model.Name" required />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Slug</label>
+                <input name="slug" class="form-control" value="@Model.Slug" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Display Name (topbar/login)</label>
+                <input name="displayName" class="form-control" value="@Model.DisplayName" placeholder="Defaults to organization name" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Maximum Upload Size (bytes)</label>
+                <input type="number" name="maxUploadSizeBytes" class="form-control" value="@Model.MaxUploadSizeBytes" min="1" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Allowed File Types</label>
+                @{
+                    var allowed = (Model.AllowedFileExtensions ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var fileTypes = new[] { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".zip" };
+                }
+                <div class="row">
+                    @foreach (var ext in fileTypes)
+                    {
+                        <div class="col-md-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="allowedFileExtensions" value="@ext" id="ext-@ext" @(allowed.Contains(ext) ? "checked" : "") />
+                                <label class="form-check-label" for="ext-@ext">@ext</label>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" name="isActive" value="true" @(Model.IsActive ? "checked" : "") />
+                <label class="form-check-label">Active</label>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+            <a class="btn btn-secondary" asp-controller="PlatformAdmin" asp-action="Index">Back</a>
+        </form>
+    </div>
+</div>

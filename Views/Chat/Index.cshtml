@@ -1,4 +1,4 @@
-﻿@{
+@{
     ViewData["Title"] = "Chat";
     var chatModels = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
     var defaultModel = chatModels.FirstOrDefault();
@@ -60,8 +60,8 @@
         font-weight: 600;
     }
     .selection-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        display: flex;
+        flex-direction: column;
         gap: 0.55rem;
         margin-top: 0.65rem;
     }
@@ -76,18 +76,39 @@
     .selection-tile-label {
         display: flex;
         align-items: center;
-        justify-content: center;
-        text-align: center;
-        min-height: 2.1rem;
-        padding: 0.45rem 0.65rem;
+        justify-content: flex-start;
+        text-align: left;
+        width: 100%;
+        min-height: 2.6rem;
+        padding: 0.6rem 0.85rem;
         border: 1px solid #dadce0;
-        border-radius: 999px;
-        background: #f1f3f4;
+        border-radius: 12px;
+        background: #ffffff;
         cursor: pointer;
-        font-size: 0.8rem;
+        font-size: 0.9rem;
         font-weight: 500;
-        color: #5f6368;
+        color: #202124;
+        box-shadow: 0 1px 2px rgba(60,64,67,0.08);
         transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+    }
+    .selection-tile-check {
+        width: 18px;
+        height: 18px;
+        border: 1.5px solid #dadce0;
+        border-radius: 4px;
+        margin-right: 0.6rem;
+        flex: 0 0 18px;
+        background: #fff;
+    }
+    .selection-tile-input:checked + .selection-tile-label {
+        border-color: #1e8e3e;
+        background: #e6f4ea;
+        color: #137333;
+        box-shadow: 0 1px 2px rgba(26,115,232,0.12);
+    }
+    .selection-tile-input:checked + .selection-tile-label .selection-tile-check {
+        background: #1e8e3e;
+        border-color: #1e8e3e;
     }
     .selection-tile-label:hover {
         background: #e8eaed;
@@ -131,7 +152,11 @@
             <small id="file-status" class="text-muted d-block mb-2"></small>
             <div class="d-flex flex-wrap gap-2 align-items-center border rounded p-2 mb-2">
                 <input id="chat-input" type="text" class="form-control border-0 shadow-none" placeholder="Message BuildWorkflow..." />
-                <input id="file-input" type="file" class="form-control" style="max-width: 220px;" />
+                <input id="file-input" type="file" class="form-control" multiple accept="@((ViewBag.AllowedFileExtensions as string) ?? "")" @(string.IsNullOrWhiteSpace(ViewBag.AllowedFileExtensions as string) ? "disabled" : "") style="max-width: 220px;" />
+                @if (string.IsNullOrWhiteSpace(ViewBag.AllowedFileExtensions as string))
+                {
+                    <small class="text-muted d-block">File uploads are disabled by policy.</small>
+                }
             <input id="image-input" type="file" accept="image/*" class="form-control" style="max-width: 220px; display:none;" />
         @if (chatModels.Count >= 1)
         {
@@ -162,62 +187,90 @@
                     .GroupBy(t => string.IsNullOrWhiteSpace(t.ToolGroup?.Name) ? "General" : t.ToolGroup!.Name)
                     .OrderBy(g => g.Key);
             }
-            <div class="tool-group-tree">
+            <div class="tool-group-list">
                 @foreach (var group in toolGroups)
                 {
-                    <details class="tool-group" open>
-                        <summary class="tool-group-summary">
-                            <span class="tool-group-name">@group.Key</span>
-                            <span class="tool-group-count">@group.Count()</span>
-                        </summary>
-                        <div class="selection-grid mt-2">
-                            @foreach (var t in group)
-                            {
-                                <div class="selection-tile">
-                                    <input class="selection-tile-input chat-tool" type="checkbox" value="@t.Id" id="chat-tool-@t.Id" checked />
-                                    <label class="selection-tile-label" for="chat-tool-@t.Id">
-                                        <span class="selection-tile-check" aria-hidden="true"></span>
-                                        <span class="selection-tile-name">@t.Name</span>
-                                    </label>
-                                </div>
-                            }
-                        </div>
-                    </details>
+                    var toolPanelId = "tool-panel-" + @group.Key.Replace(" ", "-");
+                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-2 tool-group-open" data-panel="@toolPanelId" data-title="@group.Key tools">
+                        <span>@group.Key</span>
+                        <span class="badge text-bg-light border ms-2 group-count-badge" data-panel="@toolPanelId">0/@group.Count()</span>
+                    </button>
                 }
             </div>
         </div>
-        <div>
+        <div class="mb-3">
             <div class="fw-semibold small mb-2">Knowledge</div>
             @{
                 var knowledgeGroups = ragBuckets
                     .GroupBy(b => string.IsNullOrWhiteSpace(b.KnowledgeGroup?.Name) ? "General" : b.KnowledgeGroup!.Name)
                     .OrderBy(g => g.Key);
             }
-            <div class="tool-group-tree">
+            <div class="tool-group-list">
                 @foreach (var group in knowledgeGroups)
                 {
-                    <details class="tool-group" open>
-                        <summary class="tool-group-summary">
-                            <span class="tool-group-name">@group.Key</span>
-                            <span class="tool-group-count">@group.Count()</span>
-                        </summary>
-                        <div class="selection-grid mt-2">
-                            @foreach (var b in group)
-                            {
-                                <div class="selection-tile">
-                                    <input class="selection-tile-input chat-knowledge" type="checkbox" value="@b.Id" id="chat-knowledge-@b.Id" checked />
-                                    <label class="selection-tile-label" for="chat-knowledge-@b.Id">
-                                        <span class="selection-tile-check" aria-hidden="true"></span>
-                                        <span class="selection-tile-name">@b.Name</span>
-                                    </label>
-                                </div>
-                            }
-                        </div>
-                    </details>
+                    var knowledgePanelId = "knowledge-panel-" + @group.Key.Replace(" ", "-");
+                    <button type="button" class="btn btn-sm btn-outline-secondary w-100 mb-2 tool-group-open" data-panel="@knowledgePanelId" data-title="@group.Key knowledge">
+                        <span>@group.Key</span>
+                        <span class="badge text-bg-light border ms-2 group-count-badge" data-panel="@knowledgePanelId">0/@group.Count()</span>
+                    </button>
                 }
             </div>
         </div>
     </aside>
+
+    <div id="selection-store" style="display:none;">
+        @foreach (var group in toolGroups)
+        {
+            var toolPanelId = "tool-panel-" + @group.Key.Replace(" ", "-");
+            <div class="selection-panel" id="@toolPanelId" data-title="@group.Key tools">
+                <div class="selection-grid mt-2">
+                    @foreach (var t in group)
+                    {
+                        <div class="selection-tile">
+                            <input class="selection-tile-input chat-tool" type="checkbox" value="@t.Id" id="chat-tool-@t.Id" checked />
+                            <label class="selection-tile-label" for="chat-tool-@t.Id">
+                                <span class="selection-tile-check" aria-hidden="true"></span>
+                                <span class="selection-tile-name">@t.Name</span>
+                            </label>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        @foreach (var group in knowledgeGroups)
+        {
+            var knowledgePanelId = "knowledge-panel-" + @group.Key.Replace(" ", "-");
+            <div class="selection-panel" id="@knowledgePanelId" data-title="@group.Key knowledge">
+                <div class="selection-grid mt-2">
+                    @foreach (var b in group)
+                    {
+                        <div class="selection-tile">
+                            <input class="selection-tile-input chat-knowledge" type="checkbox" value="@b.Id" id="chat-knowledge-@b.Id" checked />
+                            <label class="selection-tile-label" for="chat-knowledge-@b.Id">
+                                <span class="selection-tile-check" aria-hidden="true"></span>
+                                <span class="selection-tile-name">@b.Name</span>
+                            </label>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="modal fade" id="selectionModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="selectionModalTitle">Selection</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="selectionModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 </div>
 
@@ -231,8 +284,77 @@
     const imageInput = document.getElementById('image-input');
     const fileStatus = document.getElementById('file-status');
     const historyList = document.getElementById('chat-history');
+    const maxUploadSize = @(ViewBag.MaxUploadSizeBytes ?? 10485760);
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            for (const file of Array.from(fileInput.files || [])) {
+                if (maxUploadSize && file.size > maxUploadSize) {
+                    showAlert('File is too large: ' + file.name + ' (max ' + maxUploadSize + ' bytes).');
+                    fileInput.value = '';
+                    return;
+                }
+                const allowed = (fileInput.accept || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+                const ext = ('.' + (file.name.split('.').pop() || '')).toLowerCase();
+                if (allowed.length > 0 && !allowed.includes(ext)) {
+                    showAlert('File type is not allowed: ' + file.name);
+                    fileInput.value = '';
+                    return;
+                }
+            }
+        });
+    }
+
         const uploadSessionKey = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
     let currentSessionId = null;
+
+    const dropZone = document.querySelector('.chatgpt-main') || document.body;
+    if (dropZone) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('chat-drop-active');
+            });
+        });
+        ['dragleave', 'dragend'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.target === dropZone) dropZone.classList.remove('chat-drop-active');
+            });
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('chat-drop-active');
+            const droppedFiles = Array.from(e.dataTransfer?.files || []);
+            if (!droppedFiles.length) return;
+            const droppedImageCount = droppedFiles.filter(f => (f.type || '').startsWith('image/')).length;
+            const droppedFileCount = droppedFiles.length - droppedImageCount;
+            if (droppedImageCount > 2 || droppedFileCount > 2) {
+                fileStatus.textContent = 'You can attach at most 2 files and 2 images per chat message.';
+                return;
+            }
+            const caps = selectedModelCapabilities();
+            const accepted = [];
+            const rejected = [];
+            droppedFiles.forEach(file => {
+                if (file.type.startsWith('image/') && !caps.supportsImages) {
+                    rejected.push(file.name + ' (model does not support images)');
+                } else {
+                    accepted.push(file);
+                }
+            });
+            if (rejected.length) {
+                fileStatus.textContent = 'Skipped: ' + rejected.join(', ');
+            }
+            if (!accepted.length) return;
+            const dataTransfer = new DataTransfer();
+            accepted.forEach(file => dataTransfer.items.add(file));
+            if (fileInput) fileInput.files = dataTransfer.files;
+            fileStatus.textContent = 'Dropped: ' + accepted.map(f => f.name).join(', ') + '. Press Send to attach.';
+        });
+    }
 
     function append(role, text, attachedFileIds) {
         const div = document.createElement('div');
@@ -369,6 +491,7 @@
                 assistantDiv.appendChild(meta);
                 assistantDiv.appendChild(body);
                 log.appendChild(assistantDiv);
+                body.innerHTML = '<span class="chat-thinking" aria-label="Thinking"><span></span><span></span><span></span></span>';
                 let accumulated = '';
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
@@ -394,7 +517,7 @@
                                         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
                                         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                                         .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                                        .replace(/([^]+)/g, '<code>$1</code>')
+                                        .replace(/`([^`]+)`/g, '<code>$1</code>')
                                         .replace(/\n/g, '<br>');
                                 }
                                 if (chunk.SessionId) currentSessionId = chunk.SessionId;
@@ -460,9 +583,18 @@
     async function sendMessage() {
         const message = input.value.trim();
         const files = [];
-        if (fileInput.files && fileInput.files[0]) files.push(fileInput.files[0]);
-        if (imageInput && imageInput.files && imageInput.files[0]) files.push(imageInput.files[0]);
+        if (fileInput.files) Array.from(fileInput.files).forEach(f => files.push(f));
+        if (imageInput && imageInput.files) Array.from(imageInput.files).forEach(f => files.push(f));
         let ids = [];
+
+        const imageCount = files.filter(f => (f.type || '').startsWith('image/')).length;
+        const fileCount = files.length - imageCount;
+        if (imageCount > 2 || fileCount > 2) {
+            if (fileInput) fileInput.value = '';
+            if (imageInput) imageInput.value = '';
+            fileStatus.textContent = 'You can attach at most 2 files and 2 images per chat message.';
+            return;
+        }
 
         if (files.length) {
             fileStatus.textContent = 'Uploading...';
@@ -482,7 +614,10 @@
 
         if (!message && !ids.length) return;
         input.value = '';
-        await sendChatMessage(message, ids);
+        const chatMessage = ids.length
+            ? (message ? message + '\n\nAttached: ' + files.map(f => f.name).join(', ') : 'Attached: ' + files.map(f => f.name).join(', '))
+            : message;
+        await sendChatMessage(chatMessage, ids);
     }
 
     document.getElementById('new-chat').addEventListener('click', () => {
@@ -499,10 +634,52 @@
     send.addEventListener('click', sendMessage);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
     loadSessions();
+let currentSelectionPanel = null;
+const selectionModalEl = document.getElementById('selectionModal');
+const selectionModal = selectionModalEl ? new bootstrap.Modal(selectionModalEl) : null;
+const selectionModalBody = document.getElementById('selectionModalBody');
+const selectionModalTitle = document.getElementById('selectionModalTitle');
+document.querySelectorAll('.tool-group-open').forEach(btn => {
+    btn.addEventListener('click', () => {
+        if (currentSelectionPanel) {
+            const store = document.getElementById('selection-store');
+            if (store) store.appendChild(currentSelectionPanel);
+        }
+        const panel = document.getElementById(btn.dataset.panel);
+        if (!panel) return;
+        currentSelectionPanel = panel;
+        if (selectionModalTitle) selectionModalTitle.textContent = btn.dataset.title || 'Selection';
+        if (selectionModalBody) selectionModalBody.appendChild(panel);
+        selectionModal?.show();
+    });
+});
+selectionModalEl?.addEventListener('hidden.bs.modal', () => {
+    if (currentSelectionPanel) {
+        const store = document.getElementById('selection-store');
+        if (store) store.appendChild(currentSelectionPanel);
+        currentSelectionPanel = null;
+    }
+});
+function updateGroupCount(panelId) {
+    const panel = document.getElementById(panelId);
+    const badge = document.querySelector('.group-count-badge[data-panel="' + panelId + '"]');
+    if (!panel || !badge) return;
+    const boxes = Array.from(panel.querySelectorAll('input.chat-tool, input.chat-knowledge'));
+    const selected = boxes.filter(b => b.checked).length;
+    badge.textContent = selected + '/' + boxes.length;
+}
+function updateAllGroupCounts() {
+    document.querySelectorAll('.group-count-badge').forEach(badge => updateGroupCount(badge.dataset.panel));
+}
+document.addEventListener('change', function(e) {
+    if (e.target && (e.target.matches('input.chat-tool') || e.target.matches('input.chat-knowledge'))) {
+        const panel = e.target.closest('.selection-panel');
+        if (panel) updateGroupCount(panel.id);
+    }
+});
+document.addEventListener('DOMContentLoaded', function() {
+    updateAllGroupCounts();
+});
 
 </script>
 }
-
-
-
-

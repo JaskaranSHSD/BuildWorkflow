@@ -304,6 +304,12 @@ textarea.form-control:focus {
     color: var(--g-primary);
 }
 
+.chat-drop-active {
+    outline: 3px dashed #1a73e8;
+    outline-offset: -6px;
+    background: rgba(26, 115, 232, 0.04);
+}
+
 .chat-message {
     display: flex;
     flex-direction: column;
@@ -346,6 +352,41 @@ textarea.form-control:focus {
 
 .chat-message.user .chat-message-meta {
     text-align: right;
+}
+
+.chat-thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 18px;
+}
+
+.chat-thinking span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #9aa0a6;
+    display: inline-block;
+    animation: chat-thinking-bounce 1.2s infinite ease-in-out both;
+}
+
+.chat-thinking span:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.chat-thinking span:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
+@keyframes chat-thinking-bounce {
+    0%, 80%, 100% {
+        transform: scale(0.6);
+        opacity: 0.45;
+    }
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
 }
 
 /* Footer */
@@ -478,6 +519,15 @@ pre {
     min-height: 100vh;
 }
 
+.app-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1030;
+    background: var(--g-surface);
+}
+
 .app-sidebar {
     width: 240px;
     flex-shrink: 0;
@@ -486,8 +536,8 @@ pre {
     padding: 1rem;
     position: fixed;
     left: 0;
-    top: 0;
-    height: 100vh;
+    top: 62px;
+    height: calc(100vh - 62px);
     overflow-y: auto;
     z-index: 1000;
     display: flex;
@@ -552,10 +602,16 @@ pre {
 
 .app-content {
     margin-left: 240px;
+    padding-top: 62px;
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
+}
+
+.app-layout.no-sidebar .app-content {
+    margin-left: 0;
+    padding-top: 0;
 }
 
 .app-content main {

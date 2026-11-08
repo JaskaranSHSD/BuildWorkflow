@@ -1,0 +1,21 @@
+@{
+    ViewData["Title"] = "MFA Verification";
+}
+<div class="login-shell">
+    <div class="login-card">
+        <h1 class="login-title">Enter MFA code</h1>
+        <p class="login-subtitle">Enter the code from your authenticator app.</p>
+        @if (TempData["MfaError"] != null)
+        {
+            <div class="alert alert-danger small">@TempData["MfaError"]</div>
+        }
+        <form asp-action="MfaVerify" method="post" class="login-form">
+            @Html.AntiForgeryToken()
+            <div class="mb-3">
+                <label class="form-label login-label" for="code">Code</label>
+                <input type="text" id="code" name="code" class="form-control login-input" autocomplete="one-time-code" required />
+            </div>
+            <button type="submit" class="btn btn-primary login-button w-100">Verify</button>
+        </form>
+    </div>
+</div>

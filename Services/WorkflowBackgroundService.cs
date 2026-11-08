@@ -58,19 +58,22 @@ public class WorkflowBackgroundService : BackgroundService
                         await db.SaveChangesAsync(stoppingToken);
                         _queue.Enqueue(run.Id);
 
+                        if (schedule.ScheduleType == "Once" && schedule.IntervalMinutes.HasValue)
+                            schedule.ScheduleType = "Interval";
                         schedule.LastRunAt = now;
-                        if (schedule.IntervalMinutes.HasValue && schedule.IntervalMinutes.Value > 0)
-                            schedule.NextRunAt = now.AddMinutes(schedule.IntervalMinutes.Value);
-                        else if (schedule.RunAt.HasValue)
+                        var next = RecurrenceCalculator.GetNextRun(schedule, now);
+                        if (next.HasValue)
                         {
-                            schedule.Enabled = false;
-                            schedule.NextRunAt = null;
+                            schedule.NextRunAt = next.Value;
                         }
                         else
                         {
-                            schedule.Enabled = false;
-                            schedule.NextRunAt = null;
+                            // one-off or exhausted recurrence
+                            schedule.Enabled = schedule.ScheduleType == "Interval"; // keep interval schedules alive? disable one-offs
+                            if (schedule.ScheduleType == "Once") schedule.Enabled = false;
+                            schedule.NextRunAt = schedule.Enabled ? RecurrenceCalculator.GetNextRun(schedule, now) : null;
                         }
+                        if (schedule.ScheduleType == "Once") { schedule.Enabled = false; schedule.NextRunAt = null; }
                         await db.SaveChangesAsync(stoppingToken);
                     }
                 }

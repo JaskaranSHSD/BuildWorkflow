@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: buildworkflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: BuildWorkflow
+      POSTGRES_USER: new_admin
+      POSTGRES_PASSWORD: Test12345
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U new_admin -d BuildWorkflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: buildworkflow-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: buildworkflow-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "5199:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=BuildWorkflow;Username=new_admin;Password=Test12345"
+      Ollama__Endpoint: "http://host.docker.internal:11434"
+      Ollama__Model: "beam:cloud"
+      Ollama__EmbeddingModel: "nomic-embed-text"
+      Qdrant__Endpoint: "http://qdrant:6333"
+      Qdrant__ApiKey: ""
+      Qdrant__Collection: "rag_chunks"
+      Qdrant__VectorSize: "768"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./TempFilesLocal:/app/TempFilesLocal
+
+volumes:
+  postgres_data:
+  qdrant_data:

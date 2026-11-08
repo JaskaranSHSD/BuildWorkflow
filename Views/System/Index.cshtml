@@ -1,0 +1,15 @@
+@{
+    ViewData["Title"] = "System";
+}
+<h2 class="mb-3">System</h2>
+@if (TempData["Message"] != null)
+{
+    <div class="alert alert-success">@TempData["Message"]</div>
+}
+<div class="card p-3 mt-3">
+    <h5>Temporary Files</h5>
+    <p class="text-muted small mb-2">Delete all files stored under TempFilesLocal.</p>
+    <form asp-controller="System" asp-action="CleanTempFiles" method="post" onsubmit="return confirm('Delete all temporary files?');">
+        <button type="submit" class="btn btn-warning btn-sm">Clean TempFilesLocal</button>
+    </form>
+</div>

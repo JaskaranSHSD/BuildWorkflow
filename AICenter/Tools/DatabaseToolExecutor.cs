@@ -79,14 +79,21 @@ public class DatabaseToolExecutor
         var aiTools = new List<AITool>();
         foreach (var tool in tools)
         {
+            void Add(AITool t)
+            {
+                if (t is AIFunction af)
+                    t = new LoggingAIFunction(af, tool.Id, tool.Name, tool.ToolType, userId, _db);
+                aiTools.Add(t);
+            }
+
             if (IsFixedSqlToolType(tool.ToolType))
             {
-                aiTools.Add(CreateFixedSqlTool(tool));
+                Add(CreateFixedSqlTool(tool));
             }
             else if (string.Equals(tool.ToolType, "SqlReader", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(tool.ToolType, "Database", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateSqlTool(tool));
+                Add(CreateSqlTool(tool));
             }
             else if (string.Equals(tool.ToolType, "Excel", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(tool.ToolType, "TextFile", StringComparison.OrdinalIgnoreCase) ||
@@ -95,43 +102,68 @@ public class DatabaseToolExecutor
                      string.Equals(tool.ToolType, "Pdf", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(tool.ToolType, "FileReader", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateFileReaderTool(tool));
+                Add(CreateFileReaderTool(tool));
             }
             else if (string.Equals(tool.ToolType, "Sftp", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateSftpTool(tool));
+                Add(CreateSftpTool(tool));
+            }
+            else if (string.Equals(tool.ToolType, "DateTime", StringComparison.OrdinalIgnoreCase))
+            {
+                Add(CreateDateTimeTool(tool));
             }
             else if (string.Equals(tool.ToolType, "ExportExcel", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(tool.ToolType, "ExcelExport", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateExcelExportTool(tool, userId));
+                Add(CreateExcelExportTool(tool, userId));
             }
             else if (string.Equals(tool.ToolType, "ExportText", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(tool.ToolType, "TextExport", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateTextExportTool(tool, userId));
+                Add(CreateTextExportTool(tool, userId));
             }
             else if (string.Equals(tool.ToolType, "ExportWord", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(tool.ToolType, "WordExport", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateWordExportTool(tool, userId));
+                Add(CreateWordExportTool(tool, userId));
             }
             else if (string.Equals(tool.ToolType, "SqlToExcel", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(tool.ToolType, "SqlExcel", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.Add(CreateSqlToExcelTool(tool, userId));
+                Add(CreateSqlToExcelTool(tool, userId));
             }
             else if (string.Equals(tool.ToolType, "Mcp", StringComparison.OrdinalIgnoreCase))
             {
                 aiTools.AddRange(await CreateMcpToolsAsync(tool, cancellationToken));
             }
+            else if (string.Equals(tool.ToolType, "WorkflowManager", StringComparison.OrdinalIgnoreCase))
+            {
+                if (userId.HasValue)
+                {
+                    Add(CreateWorkflowManagerTool(userId.Value));
+                }
+            }
             else
             {
-                aiTools.Add(CreateTool(tool));
+                Add(CreateTool(tool));
             }
         }
 
+        if (userId.HasValue)
+        {
+            aiTools.Add(CreateWorkflowManagerTool(userId.Value));
+        }
+
         return aiTools;
+    }
+
+    public AITool WrapTool(AITool tool, Guid? userId, string? name = null, string? type = null, Guid? toolId = null)
+    {
+        if (tool is AIFunction af)
+        {
+            return new LoggingAIFunction(af, toolId, name ?? tool.Name, type, userId, _db);
+        }
+        return tool;
     }
 
     private AITool CreateExcelTool(ToolDefinition tool)
@@ -292,7 +324,15 @@ public class DatabaseToolExecutor
             if (extension == ".xlsx")
             {
                 var table = Helpers.ExcelHelper.ReadSheet(fullPath);
-                return System.Text.Json.JsonSerializer.Serialize(table);
+                var headers = table.Columns.Cast<System.Data.DataColumn>().Select(c => c.ColumnName).ToList();
+                var rows = new List<List<string?>>();
+                foreach (System.Data.DataRow r in table.Rows)
+                {
+                    var vals = new List<string?>();
+                    foreach (var item in r.ItemArray) vals.Add(item == DBNull.Value ? null : item?.ToString());
+                    rows.Add(vals);
+                }
+                return System.Text.Json.JsonSerializer.Serialize(new { headers, rows });
             }
 
             return await System.IO.File.ReadAllTextAsync(fullPath);
@@ -618,6 +658,47 @@ public class DatabaseToolExecutor
             description: string.IsNullOrWhiteSpace(tool.Description) ? "List, upload, or download files over SFTP." : tool.Description);
     }
 
+    private AITool CreateDateTimeTool(ToolDefinition tool)
+    {
+        return AIFunctionFactory.Create(
+            (string? action, string? dateTime, string? fromTimeZone, string? toTimeZone) =>
+                ExecuteDateTimeAsync(action, dateTime, fromTimeZone, toTimeZone),
+            name: SanitizeName(tool.Name),
+            description: string.IsNullOrWhiteSpace(tool.Description)
+                ? "Get the current date/time and convert times between time zones. Parameters: action (now/convert), dateTime, fromTimeZone, toTimeZone."
+                : tool.Description);
+    }
+
+    private static Task<string> ExecuteDateTimeAsync(string? action, string? dateTime, string? fromTimeZone, string? toTimeZone)
+    {
+        action = string.IsNullOrWhiteSpace(action) ? "now" : action.Trim().ToLowerInvariant();
+        fromTimeZone = string.IsNullOrWhiteSpace(fromTimeZone) ? "UTC" : fromTimeZone.Trim();
+        toTimeZone = string.IsNullOrWhiteSpace(toTimeZone) ? "UTC" : toTimeZone.Trim();
+
+        static TimeZoneInfo ResolveTz(string id)
+        {
+            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch { return TimeZoneInfo.Utc; }
+        }
+
+        if (action == "convert")
+        {
+            if (!DateTime.TryParse(dateTime, out var parsed))
+                return Task.FromResult("Invalid dateTime. Use an ISO-like value, e.g. 2025-01-15T10:30:00.");
+
+            var fromTz = ResolveTz(fromTimeZone);
+            var toTz = ResolveTz(toTimeZone);
+            var sourceOffset = fromTz.GetUtcOffset(parsed);
+            var dto = new DateTimeOffset(parsed, sourceOffset);
+            var converted = TimeZoneInfo.ConvertTime(dto, toTz);
+            return Task.FromResult($"Converted: {converted:O} ({toTimeZone})");
+        }
+
+        var nowTz = ResolveTz(toTimeZone);
+        var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, nowTz);
+        return Task.FromResult($"Current time in {toTimeZone}: {now:O}");
+    }
+
     private static async Task<string> ExecuteSftpAsync(SftpToolConfiguration? config, string input)
     {
         if (config == null || string.IsNullOrWhiteSpace(config.Host) || string.IsNullOrWhiteSpace(config.Username))
@@ -749,4 +830,209 @@ public class DatabaseToolExecutor
             description: string.IsNullOrWhiteSpace(tool.Description) ? "Run a read-only SQL query and generate an Excel file." : tool.Description);
     }
 
+
+    private AITool CreateWorkflowManagerTool(Guid userId)
+    {
+        return AIFunctionFactory.Create(
+            async (string action, string? workflowId = null, string? name = null, string? description = null, string? systemInstruction = null, string? stepName = null, string? userInstruction = null, int? order = null) =>
+            {
+                action = (action ?? string.Empty).Trim().ToLowerInvariant();
+                switch (action)
+                {
+                    case "list":
+                        {
+                            var workflows = await _db.Workflows
+                                .Where(w => w.UserId == userId)
+                                .OrderByDescending(w => w.UpdatedAt)
+                                .Take(50)
+                                .ToListAsync();
+                            var result = new List<object>();
+                            foreach (var w in workflows)
+                            {
+                                result.Add(new
+                                {
+                                    id = w.Id,
+                                    name = w.Name,
+                                    description = w.Description,
+                                    stepCount = await _db.WorkflowSteps.CountAsync(s => s.WorkflowId == w.Id),
+                                    runCount = await _db.WorkflowRuns.CountAsync(r => r.WorkflowId == w.Id),
+                                    updatedAt = w.UpdatedAt
+                                });
+                            }
+                            return System.Text.Json.JsonSerializer.Serialize(result);
+                        }
+                    case "create":
+                        {
+                            if (string.IsNullOrWhiteSpace(name))
+                                return "name is required.";
+                            var user = await _db.Users.FindAsync(new object[] { userId });
+                            var workflow = new WorkflowDefinition
+                            {
+                                UserId = userId,
+                                OrganizationId = user?.OrganizationId,
+                                Name = name.Trim(),
+                                Description = description,
+                                SystemInstruction = systemInstruction
+                            };
+                            _db.Workflows.Add(workflow);
+                            await _db.SaveChangesAsync();
+                            if (!string.IsNullOrWhiteSpace(stepName))
+                            {
+                                var nextOrder = (await _db.WorkflowSteps.Where(s => s.WorkflowId == workflow.Id).MaxAsync(s => (int?)s.Order) ?? 0) + 1;
+                                _db.WorkflowSteps.Add(new WorkflowStep
+                                {
+                                    WorkflowId = workflow.Id,
+                                    Order = order ?? nextOrder,
+                                    Name = stepName.Trim(),
+                                    UserInstruction = userInstruction,
+                                    IsActive = true
+                                });
+                                await _db.SaveChangesAsync();
+                            }
+                            return $"Created workflow {workflow.Id} ({workflow.Name}).";
+                        }
+                    case "update":
+                        {
+                            if (!Guid.TryParse(workflowId, out var id))
+                                return "workflowId is required.";
+                            var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId);
+                            if (workflow == null)
+                                return "Workflow not found or you do not have permission.";
+                            if (!string.IsNullOrWhiteSpace(name)) workflow.Name = name.Trim();
+                            if (description != null) workflow.Description = description;
+                            if (systemInstruction != null) workflow.SystemInstruction = systemInstruction;
+                            workflow.UpdatedAt = DateTimeOffset.UtcNow;
+                            await _db.SaveChangesAsync();
+                            return $"Updated workflow {workflow.Id} ({workflow.Name}).";
+                        }
+                    case "delete":
+                        {
+                            if (!Guid.TryParse(workflowId, out var id))
+                                return "workflowId is required.";
+                            var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId);
+                            if (workflow == null)
+                                return "Workflow not found or you do not have permission.";
+                            var steps = await _db.WorkflowSteps.Where(s => s.WorkflowId == workflow.Id).ToListAsync();
+                            _db.WorkflowSteps.RemoveRange(steps);
+                            _db.Workflows.Remove(workflow);
+                            await _db.SaveChangesAsync();
+                            return $"Deleted workflow {id}.";
+                        }
+                    case "add_step":
+                        {
+                            if (!Guid.TryParse(workflowId, out var id))
+                                return "workflowId is required.";
+                            if (string.IsNullOrWhiteSpace(stepName))
+                                return "stepName is required.";
+                            var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId);
+                            if (workflow == null)
+                                return "Workflow not found or you do not have permission.";
+                            var nextOrder = (await _db.WorkflowSteps.Where(s => s.WorkflowId == workflow.Id).MaxAsync(s => (int?)s.Order) ?? 0) + 1;
+                            var step = new WorkflowStep
+                            {
+                                WorkflowId = workflow.Id,
+                                Order = order ?? nextOrder,
+                                Name = stepName.Trim(),
+                                UserInstruction = userInstruction,
+                                IsActive = true
+                            };
+                            _db.WorkflowSteps.Add(step);
+                            await _db.SaveChangesAsync();
+                            return $"Added step {step.Id} ({step.Name}) to workflow {workflow.Id}.";
+                        }
+                    case "list_steps":
+                        {
+                            if (!Guid.TryParse(workflowId, out var id))
+                                return "workflowId is required.";
+                            var workflow = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId);
+                            if (workflow == null)
+                                return "Workflow not found or you do not have permission.";
+                            var steps = await _db.WorkflowSteps
+                                .Where(s => s.WorkflowId == id)
+                                .OrderBy(s => s.Order)
+                                .ThenBy(s => s.CreatedAt)
+                                .Select(s => new { id = s.Id, name = s.Name, order = s.Order, userInstruction = s.UserInstruction })
+                                .ToListAsync();
+                            return System.Text.Json.JsonSerializer.Serialize(steps);
+                        }
+                    default:
+                        return "Unknown action. Supported actions: list, create, update, delete, add_step, list_steps.";
+                }
+            },
+            name: "manage_workflows",
+            description: "Create and manage workflows and workflow steps owned by the current user. Strictly operates on the current user's workflows. Actions: list, create, update, delete, add_step, list_steps.");
+    }
+
+    private sealed class LoggingAIFunction : AIFunction
+    {
+        private readonly AIFunction _inner;
+        private readonly Guid? _toolId;
+        private readonly string? _toolName;
+        private readonly string? _toolType;
+        private readonly Guid? _userId;
+        private readonly AppDbContext _db;
+
+        public LoggingAIFunction(AIFunction inner, Guid? toolId, string? toolName, string? toolType, Guid? userId, AppDbContext db)
+        {
+            _inner = inner;
+            _toolId = toolId;
+            _toolName = toolName;
+            _toolType = toolType;
+            _userId = userId;
+            _db = db;
+        }
+
+        public override string Name => _inner.Name;
+        public override string Description => _inner.Description;
+        public override System.Text.Json.JsonElement JsonSchema => _inner.JsonSchema;
+        public override System.Text.Json.JsonElement? ReturnJsonSchema => _inner.ReturnJsonSchema;
+        public override System.Text.Json.JsonSerializerOptions JsonSerializerOptions => _inner.JsonSerializerOptions;
+        public override IReadOnlyDictionary<string, object?> AdditionalProperties => _inner.AdditionalProperties;
+
+        protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var input = arguments == null ? "{}" : System.Text.Json.JsonSerializer.Serialize(arguments);
+            try
+            {
+                var result = await _inner.InvokeAsync(arguments, cancellationToken);
+                Log("Success", input, result?.ToString(), null, (int)sw.ElapsedMilliseconds);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Log("Error", input, null, ex.ToString(), (int)sw.ElapsedMilliseconds);
+                throw;
+            }
+        }
+
+        private void Log(string status, string input, string? output, string? error, int durationMs)
+        {
+            try
+            {
+                _db.ToolInvocationLogs.Add(new ToolInvocationLog
+                {
+                    ToolId = _toolId,
+                    ToolName = _toolName,
+                    ToolType = _toolType,
+                    UserId = _userId,
+                    Status = status,
+                    Input = input.Length > 8000 ? input.Substring(0, 8000) : input,
+                    Output = output?.Length > 8000 ? output.Substring(0, 8000) : output,
+                    Error = error?.Length > 8000 ? error.Substring(0, 8000) : error,
+                    DurationMs = durationMs,
+                    CreatedAt = DateTimeOffset.UtcNow
+                });
+                _db.SaveChanges();
+            }
+            catch
+            {
+            }
+        }
+
+        public new TService? GetService<TService>(object? serviceKey = null) where TService : class
+        {
+            return _inner.GetService<TService>(serviceKey);
+        }
+    }
 }

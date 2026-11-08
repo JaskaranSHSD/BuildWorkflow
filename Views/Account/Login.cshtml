@@ -1,23 +1,164 @@
+@using BuildWorkflow.Data
+@inject AppDbContext Db
 @{
     ViewData["Title"] = "Login";
+    var firstOrg = Db.Organizations.OrderBy(o => o.CreatedAt).FirstOrDefault();
+    var loginBrand = !string.IsNullOrWhiteSpace(firstOrg?.DisplayName) ? firstOrg!.DisplayName : firstOrg?.Name;
+    if (string.IsNullOrWhiteSpace(loginBrand)) loginBrand = "BuildWorkflow";
+    var brandInitial = string.IsNullOrWhiteSpace(loginBrand) ? "B" : loginBrand.Substring(0, 1).ToUpperInvariant();
 }
+<div class="login-shell">
+    <div class="login-card">
+        <div class="login-brand">
+            <span class="login-logo">@brandInitial</span>
+            <span class="login-brand-name">@loginBrand</span>
+        </div>
+        <h1 class="login-title">Sign in</h1>
+        <p class="login-subtitle">Use your account to continue to @loginBrand.</p>
 
-<div class="row justify-content-center">
-    <div class="col-md-4">
-        <h2>Login</h2>
-        <form asp-action="Login" method="post">
-            <div asp-validation-summary="All" class="text-danger"></div>
+        <form asp-action="Login" method="post" class="login-form">
+            <div asp-validation-summary="All" class="text-danger mb-3 small"></div>
+
             <div class="mb-3">
-                <label class="form-label">Username</label>
-                <input name="username" class="form-control" />
+                <label class="form-label login-label" for="username">Username or email</label>
+                <input name="username" id="username" class="form-control login-input" autocomplete="username" placeholder="Enter username or email" />
+                <input type="hidden" name="usernameEnc" id="usernameEnc" />
             </div>
-            <div class="mb-3">
-                <label class="form-label">Password</label>
-                <input name="password" type="password" class="form-control" />
+
+            <div class="mb-2">
+                <label class="form-label login-label" for="password">Password</label>
+                <input name="password" id="password" type="password" class="form-control login-input" autocomplete="current-password" placeholder="Enter password" />
+                <input type="hidden" name="passwordEnc" id="passwordEnc" />
             </div>
+
             <input type="hidden" name="returnUrl" value="@ViewBag.ReturnUrl" />
-            <button type="submit" class="btn btn-primary">Login</button>
+            <div class="d-flex justify-content-end align-items-center">
+                <button type="submit" class="btn btn-primary login-button">Next</button>
+            </div>
         </form>
-        <p class="mt-3 text-muted">Default seeded admin: <strong>admin / admin</strong></p>
     </div>
 </div>
+
+<style>
+.login-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: #f0f4f9;
+}
+.login-card {
+    width: 100%;
+    max-width: 440px;
+    background: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 28px;
+    padding: 2.75rem 2.5rem 2.25rem;
+    box-shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15);
+}
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 1.75rem;
+}
+.login-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #1a73e8;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+.login-brand-name {
+    font-size: 1.15rem;
+    font-weight: 500;
+    color: #202124;
+}
+.login-title {
+    font-size: 2.25rem;
+    font-weight: 400;
+    color: #202124;
+    margin-bottom: .25rem;
+    line-height: 1.2;
+}
+.login-subtitle {
+    color: #5f6368;
+    font-size: 1rem;
+    margin-bottom: 2rem;
+}
+.login-label {
+    font-size: .875rem;
+    font-weight: 500;
+    color: #202124;
+    margin-bottom: .35rem;
+}
+.login-input {
+    height: 52px;
+    border-radius: 4px;
+    border: 1px solid #dadce0;
+    padding: .75rem 1rem;
+    font-size: 1rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.login-input:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 1px #1a73e8;
+    outline: none;
+}
+.login-button {
+    min-width: 96px;
+    height: 40px;
+    border-radius: 4px;
+    font-weight: 500;
+    padding: 0 .95rem;
+    background: #1a73e8;
+    border-color: #1a73e8;
+}
+.login-button:hover {
+    background: #1557b0;
+    border-color: #1557b0;
+}
+.login-link {
+    color: #1a73e8;
+    text-decoration: none;
+    font-size: .875rem;
+    font-weight: 500;
+}
+.login-link:hover {
+    text-decoration: underline;
+}
+</style>
+
+@section Scripts {
+<script>
+async function importPublicKey() {
+    const res = await fetch('/Account/PublicKey');
+    const data = await res.json();
+    const binary = Uint8Array.from(atob(data.publicKey), c => c.charCodeAt(0));
+    return await crypto.subtle.importKey('spki', binary.buffer, { name: 'RSA-OAEP', hash: 'SHA-256' }, true, ['encrypt']);
+}
+function toBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary);
+}
+document.querySelector('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const pubKey = await importPublicKey();
+    const enc = async (text) => toBase64(await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pubKey, new TextEncoder().encode(text)));
+    document.getElementById('usernameEnc').value = await enc(document.getElementById('username').value);
+    document.getElementById('passwordEnc').value = await enc(document.getElementById('password').value);
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+    form.submit();
+});
+</script>
+}

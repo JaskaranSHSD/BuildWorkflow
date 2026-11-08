@@ -1,0 +1,6 @@
+bin/
+obj/
+TempFilesLocal/
+*.db
+.git/
+.vs/

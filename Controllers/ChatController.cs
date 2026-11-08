@@ -55,6 +55,18 @@ public class ChatController : Controller
             ? assignedModels
             : (isAdmin ? await _db.AiModels.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync() : assignedModels);
 
+        var chatUser = await _db.Users.Include(u => u.Organization).FirstOrDefaultAsync(u => u.Id == userId);
+        string? userAllowed = chatUser?.AllowedFileExtensions;
+        string? orgAllowed = chatUser?.Organization?.AllowedFileExtensions;
+        if (userAllowed != null)
+        {
+            ViewBag.AllowedFileExtensions = userAllowed.Length == 0 ? string.Empty : userAllowed;
+        }
+        else
+        {
+            ViewBag.AllowedFileExtensions = orgAllowed;
+        }
+        ViewBag.MaxUploadSizeBytes = chatUser?.Organization?.MaxUploadSizeBytes ?? (10 * 1024 * 1024);
         return View();
     }
 }

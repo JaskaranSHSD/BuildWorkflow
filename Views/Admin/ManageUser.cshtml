@@ -6,9 +6,13 @@
     var buckets = ViewBag.RagBuckets as List<BuildWorkflow.Models.RagBucket> ?? new();
     var knowledgeGroups = ViewBag.KnowledgeGroups as List<BuildWorkflow.Models.KnowledgeGroup> ?? new();
     var models = ViewBag.Models as List<BuildWorkflow.Models.AiModelDefinition> ?? new();
+    var organization = ViewBag.Organization as BuildWorkflow.Models.Organization;
     var assignedModels = ViewBag.AssignedModels as List<BuildWorkflow.Models.UserAiModel> ?? new();
     var assignedTools = ViewBag.AssignedTools as List<BuildWorkflow.Models.UserToolPermission> ?? new();
     var assignedBuckets = ViewBag.AssignedBuckets as List<BuildWorkflow.Models.UserRagBucket> ?? new();
+    var mfaSecret = ViewBag.MfaSecret as string;
+    var mfaOtpAuthUri = ViewBag.MfaOtpAuthUri as string;
+    var mfaPlatformCode = ViewBag.MfaPlatformCode as string;
     var assignedModelIds = assignedModels.Select(a => a.AiModelId).ToHashSet();
     var assignedToolIds = assignedTools.Select(a => a.ToolId).ToHashSet();
     var assignedBucketIds = assignedBuckets.Select(a => a.RagBucketId).ToHashSet();
@@ -16,19 +20,86 @@
 
 <h2>Manage User: @Model.Username</h2>
 
+@if (organization != null)
+{
+    <div class="card p-3 mb-3">
+        <h5>Organization File Policy</h5>
+        <div><strong>Organization:</strong> @organization.Name</div>
+        <div><strong>Allowed file types:</strong> @(string.IsNullOrWhiteSpace(organization.AllowedFileExtensions) ? "All supported types" : organization.AllowedFileExtensions)</div>
+        <div><strong>Maximum file size:</strong> @organization.MaxUploadSizeBytes bytes</div>
+    </div>
+}
+<div class="card p-3 mb-3">
+    <h5>MFA</h5>
+    @if (Model.Role == "PlatformAdmin" || string.Equals(Model.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
+    {
+        <p class="mb-1">Platform user fixed MFA code: <strong>@mfaPlatformCode</strong></p>
+        <small class="text-muted">Code is year plus day of month (4 digits).</small>
+    }
+    else
+    {
+        <p class="mb-1">Authenticator secret: <code>@mfaSecret</code></p>
+        <div id="mfa-qr" class="mb-2"></div>
+        <small class="text-muted">Share this barcode or secret with the user.</small>
+        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                var box = document.getElementById('mfa-qr');
+                if (box && window.QRCode) {
+                    new QRCode(box, { text: '@mfaOtpAuthUri', width: 180, height: 180 });
+                }
+            });
+        </script>
+    }
+</div>
 <div class="card p-3 mb-3">
     <h5>Update user</h5>
+    @if (Model.LockoutEnd.HasValue && Model.LockoutEnd.Value > DateTimeOffset.UtcNow)
+    {
+        <form asp-action="UnblockUser" asp-route-id="@Model.Id" method="post" class="mb-2">
+            <button type="submit" class="btn btn-warning btn-sm">Unblock account (locked until @Model.LockoutEnd.Value)</button>
+        </form>
+    }
     <form asp-action="UpdateUser" method="post" class="row g-2">
         <input type="hidden" name="id" value="@Model.Id" />
         <div class="col-md-3"><input name="username" class="form-control" value="@Model.Username" placeholder="Username" /></div>
         <div class="col-md-3"><input name="fullName" class="form-control" value="@Model.FullName" placeholder="Full name" /></div>
         <div class="col-md-3"><input name="email" class="form-control" value="@Model.Email" placeholder="Email" /></div>
-        <div class="col-md-3"><input name="password" class="form-control" placeholder="New password (leave blank to keep)" /></div>
+        <div class="col-md-3"><input name="password" class="form-control" placeholder="New password (leave blank to keep)" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="Password must be at least 8 characters and include uppercase, lowercase, number, and special character." /></div>
         <div class="col-md-2">
             <select name="role" class="form-select">
                 <option value="User" selected="@(Model.Role=="User")">User</option>
                 <option value="Admin" selected="@(Model.Role=="Admin")">Admin</option>
             </select>
+        </div>
+        <div class="col-12 form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="requirePasswordChange" value="true" id="requirePwd" @(Model.MustChangePassword ? "checked" : "") />
+            <label class="form-check-label" for="requirePwd">Require password change on next login</label>
+        </div>
+        <div class="col-12">
+            <label class="form-label">Allowed file types for this user (subset of organization)</label>
+            <div class="row">
+                <input type="hidden" name="allowedFileExtensions" value="" />
+                @{
+                    var orgTypes = (organization?.AllowedFileExtensions ?? ".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.gif,.zip")
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                    var userTypes = new HashSet<string>((Model.AllowedFileExtensions ?? organization?.AllowedFileExtensions ?? string.Empty)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
+                    var userAllowsAny = Model.AllowedFileExtensions != "";
+                }
+                @foreach (var ext in orgTypes)
+                {
+                    <div class="col-md-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="allowedFileExtensions" value="@ext" id="user-ext-@ext" @((userAllowsAny && userTypes.Contains(ext)) || (Model.AllowedFileExtensions == null && userTypes.Contains(ext)) ? "checked" : "") />
+                            <label class="form-check-label" for="user-ext-@ext">@ext</label>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="form-text">Uncheck all to disable file uploads for this user.</div>
         </div>
         <div class="col-md-1"><button class="btn btn-primary w-100">Save</button></div>
     </form>

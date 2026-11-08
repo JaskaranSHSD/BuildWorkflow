@@ -73,7 +73,7 @@ public static class ExcelHelper
             {
                 if (index < table.Columns.Count)
                 {
-                    dataRow[index] = cell.IsEmpty() ? DBNull.Value : cell.GetValue<object>();
+                    dataRow[index] = cell.IsEmpty() ? DBNull.Value : cell.Value.ToString();
                 }
                 index++;
             }
