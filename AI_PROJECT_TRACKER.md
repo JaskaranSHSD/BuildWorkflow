@@ -24,6 +24,15 @@ This document is the AI-facing source of truth for the `BuildWorkflow` .NET web 
 - RAG scalability: configurable `Rag:MaxChunksToScan`, bounded parallel chunk embeddings, reusable embedding HTTP clients, RAG indexes, and cascading cleanup of chunks/documents.
 - Pagination: admin models/tools/users/RAG buckets, chat sessions, and workflow runs are latest-first with configurable page sizes.
 - Chat sessions are limited by `Chat:MaxMessagesPerSession` (default 50); over-limit sessions ask the user to start a new chat.
+- Auth/security: password complexity rules, optional forced password change, soft-delete users, multi-factor authentication (platform fixed 4-digit code; other users authenticator-app TOTP with admin-shared QR codes).
+- Branding: organization display name can override the topbar/login brand, with BuildWorkflow fallback.
+- Layout: sticky topbar, single logo, sidebar under topbar.
+- Organization/user file policy: allowed extensions and max upload size per organization, user-level subsets, backend and client-side enforcement, upload controls disabled when no types are allowed.
+- Chat selection UI: group buttons with selected/total counts and modal panels for tools/knowledge.
+- Workflow management: nested steps, schedules, run history with 50-record pagination and step-aware execution-log modal, clear-history action.
+- All major listing screens now use server-side pagination and name/description search.
+- System (platform-admin only) page for temporary-file cleanup.
+- Global JavaScript alerts replaced with Bootstrap modal alerts.
 
 ## 2. Technology Stack
 

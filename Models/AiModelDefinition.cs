@@ -26,5 +26,7 @@ public class AiModelDefinition
 
     public bool SupportsImages { get; set; } = false;
 
+    public bool IsEmbedding { get; set; } = false;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

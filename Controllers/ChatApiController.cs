@@ -87,7 +87,22 @@ public class ChatApiController : ControllerBase
         if (bucketIds.Count == 0) return Ok(Array.Empty<object>());
 
         var endpoint = _configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
-        var embeddingModel = _configuration["Ollama:EmbeddingModel"];
+        string? embeddingModel = null;
+        var firstEmbeddingBucket = await _db.RagBuckets
+            .FirstOrDefaultAsync(b => bucketIds.Contains(b.Id) && b.EmbeddingModelId.HasValue, cancellationToken);
+        if (firstEmbeddingBucket?.EmbeddingModelId.HasValue == true)
+        {
+            var aiModel = await _db.AiModels.FirstOrDefaultAsync(m => m.Id == firstEmbeddingBucket.EmbeddingModelId.Value, cancellationToken);
+            if (aiModel != null)
+            {
+                endpoint = string.IsNullOrWhiteSpace(aiModel.Endpoint) ? endpoint : aiModel.Endpoint;
+                embeddingModel = aiModel.ModelName;
+            }
+        }
+        else
+        {
+            embeddingModel = _configuration["Ollama:EmbeddingModel"];
+        }
         var queryEmbedding = await BuildWorkflow.RAGPipeline.RagEmbeddingGenerator.GenerateAsync(endpoint, embeddingModel, request.Query, cancellationToken);
 
         var hits = await _qdrant.SearchHitsAsync(bucketIds, request.Query, queryEmbedding, 25, cancellationToken);

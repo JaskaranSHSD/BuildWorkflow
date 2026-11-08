@@ -1,4 +1,6 @@
 @model List<BuildWorkflow.Models.RagBucket>
+@using BuildWorkflow.Data
+@inject AppDbContext Db
 @{
     ViewData["Title"] = "RAG Buckets";
     var users = ViewBag.Users as List<BuildWorkflow.Models.AppUser> ?? new();
@@ -38,6 +40,17 @@
                                 <option value="@g.Id">@g.Name</option>
                             }
                         </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Embedding Model</label>
+                        <select name="EmbeddingModelId" class="form-select">
+                            <option value="">Plain text search (no embeddings)</option>
+                            @foreach (var m in Db.AiModels.Where(x => x.IsActive && x.IsEmbedding).OrderBy(x => x.Name))
+                            {
+                                <option value="@m.Id">@m.Name (@m.ModelName)</option>
+                            }
+                        </select>
+                        <div class="form-text">Cannot be changed after the bucket is created.</div>
                     </div>
                 </div>
                 <div class="modal-footer">

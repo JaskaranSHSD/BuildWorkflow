@@ -122,6 +122,8 @@ using (var scope = app.Services.CreateScope())
             ALTER TABLE "WorkflowRuns" ADD COLUMN IF NOT EXISTS "OutputSummary" text NULL;
             ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsTools" boolean NOT NULL DEFAULT TRUE;
             ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "SupportsImages" boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "IsEmbedding" boolean NOT NULL DEFAULT FALSE;
+            ALTER TABLE "RagBuckets" ADD COLUMN IF NOT EXISTS "EmbeddingModelId" uuid NULL;
             CREATE TABLE IF NOT EXISTS "ToolGroups" (
                 "Id" uuid NOT NULL PRIMARY KEY,
                 "Name" character varying(128) NOT NULL,

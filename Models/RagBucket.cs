@@ -24,5 +24,7 @@ public class RagBucket
 
     public Guid? KnowledgeGroupId { get; set; }
 
+    public Guid? EmbeddingModelId { get; set; }
+
     public KnowledgeGroup? KnowledgeGroup { get; set; }
 }

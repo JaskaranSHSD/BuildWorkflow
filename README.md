@@ -15,6 +15,7 @@ BuildWorkflow is an ASP.NET Core MVC application for authenticated AI chat, RAG 
 - Workflow creation, editing, file/tool/knowledge selection, scheduling, sharing, run history, and generated file links.
 - Export data to Excel/TXT from tools and workflows.
 - Background workflow runner and due schedule execution.
+- Admin/system areas: organization file upload policies, MFA management, soft-deleted users, forced password changes, system cleanup, and total/search-driven pagination across listing pages.
 
 ## Prerequisites
 

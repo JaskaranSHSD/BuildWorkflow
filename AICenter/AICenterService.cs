@@ -157,7 +157,21 @@ public class AICenterService
         }
 
         var endpoint = _configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
-        var embeddingModel = _configuration["Ollama:EmbeddingModel"];
+        string? embeddingModel = null;
+        var embeddingBucket = await _db.RagBuckets.FirstOrDefaultAsync(b => selectedBucketIds.Contains(b.Id) && b.EmbeddingModelId.HasValue, cancellationToken);
+        if (embeddingBucket?.EmbeddingModelId.HasValue == true)
+        {
+            var selectedAiModel = await _db.AiModels.FirstOrDefaultAsync(m => m.Id == embeddingBucket.EmbeddingModelId.Value, cancellationToken);
+            if (selectedAiModel != null)
+            {
+                endpoint = string.IsNullOrWhiteSpace(selectedAiModel.Endpoint) ? endpoint : selectedAiModel.Endpoint;
+                embeddingModel = selectedAiModel.ModelName;
+            }
+        }
+        else
+        {
+            embeddingModel = _configuration["Ollama:EmbeddingModel"];
+        }
         var queryEmbedding = await BuildWorkflow.RAGPipeline.RagEmbeddingGenerator.GenerateAsync(endpoint, embeddingModel, originalMessage, cancellationToken);
 
         var maxChunks = maxChunksToScan <= 0 ? 1000 : maxChunksToScan;

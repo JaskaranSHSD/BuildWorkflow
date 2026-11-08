@@ -702,8 +702,20 @@ public class AdminController : Controller
 
         if (!string.IsNullOrWhiteSpace(content))
         {
-            var endpoint = _configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
-            var embeddingModel = _configuration["Ollama:EmbeddingModel"];
+            var uploadBucket = await _db.RagBuckets.FirstOrDefaultAsync(b => b.Id == bucketId);
+            string endpoint;
+            string? embeddingModel;
+            if (uploadBucket?.EmbeddingModelId.HasValue == true)
+            {
+                var embeddingAiModel = await _db.AiModels.FirstOrDefaultAsync(m => m.Id == uploadBucket.EmbeddingModelId.Value);
+                endpoint = embeddingAiModel?.Endpoint ?? (_configuration["Ollama:Endpoint"] ?? "http://localhost:11434");
+                embeddingModel = embeddingAiModel?.ModelName;
+            }
+            else
+            {
+                endpoint = _configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
+                embeddingModel = null;
+            }
             var chunkList = BuildWorkflow.RAGPipeline.RagChunker.Chunk(content).ToList();
 
             // Embed the document once and all chunks with bounded parallelism.

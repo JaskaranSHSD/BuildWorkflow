@@ -159,7 +159,21 @@ public class WorkflowExecutionService
                     }
 
                     var endpoint = configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
-                    var embeddingModel = configuration["Ollama:EmbeddingModel"];
+                    string? embeddingModel = null;
+                    var embeddingBucket = await db.RagBuckets.FirstOrDefaultAsync(b => ragBucketIds.Contains(b.Id) && b.EmbeddingModelId.HasValue, cancellationToken);
+                    if (embeddingBucket?.EmbeddingModelId.HasValue == true)
+                    {
+                        var aiModel = await db.AiModels.FirstOrDefaultAsync(m => m.Id == embeddingBucket.EmbeddingModelId.Value, cancellationToken);
+                        if (aiModel != null)
+                        {
+                            endpoint = string.IsNullOrWhiteSpace(aiModel.Endpoint) ? endpoint : aiModel.Endpoint;
+                            embeddingModel = aiModel.ModelName;
+                        }
+                    }
+                    else
+                    {
+                        embeddingModel = configuration["Ollama:EmbeddingModel"];
+                    }
                     var queryEmbedding = await BuildWorkflow.RAGPipeline.RagEmbeddingGenerator.GenerateAsync(endpoint, embeddingModel, step.UserInstruction ?? string.Empty, cancellationToken);
                     var selectedContents = await qdrant.SearchAsync(ragBucketIds, step.UserInstruction ?? string.Empty, queryEmbedding, 1000, cancellationToken);
                     var ragContext = BuildWorkflow.RAGPipeline.RagContextBuilder.Build(step.UserInstruction ?? string.Empty, selectedContents);
