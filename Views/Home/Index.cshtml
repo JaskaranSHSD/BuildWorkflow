@@ -1,20 +1,92 @@
 ﻿@{
-    ViewData["Title"] = "Home Page";
+    ViewData["Title"] = "Home";
 }
-
-<div class="text-center py-5">
-    <h1 class="display-5 fw-medium mb-2">Microsoft Agent Framework + Ollama</h1>
-    <p class="text-muted mb-4">Manage models, tools, knowledge, and users from the admin workspace. Sign in to start chatting.</p>
-    @if (User.Identity?.IsAuthenticated == true)
-    {
-        <a asp-controller="Chat" asp-action="Index" class="btn btn-primary">Open Chat</a>
-        @if ((User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")))
-        {
-            <a asp-controller="Admin" asp-action="Index" class="btn btn-outline-secondary ms-2">Open Admin</a>
-        }
-    }
-    else
-    {
+@if (User.Identity?.IsAuthenticated != true)
+{
+    <div class="text-center py-5">
+        <h1 class="display-5 fw-medium mb-2">BuildWorkflow</h1>
+        <p class="text-muted mb-4">Sign in to access chat, workflows, and knowledge.</p>
         <a asp-controller="Account" asp-action="Login" class="btn btn-primary">Sign In</a>
-    }
-</div>
+    </div>
+}
+else
+{
+    <div class="mb-4">
+        <h2 class="mb-1">Welcome back@(User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value != null ? ", " + User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)!.Value : "")</h2>
+        <p class="text-muted mb-2">Quick access to your work.</p>
+        <div class="d-flex flex-wrap gap-2">
+            @if (ViewBag.CanChat == true) { <a asp-controller="Chat" asp-action="Index" class="btn btn-primary">Open Chat</a> }
+            @if (ViewBag.CanWorkflowWrite == true) { <a asp-controller="Workflow" asp-action="Index" class="btn btn-outline-secondary">Manage Workflows</a> }
+            <a asp-controller="Help" asp-action="Index" class="btn btn-outline-secondary">Help</a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        @if (ViewBag.CanChat == true)
+        {
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header"><strong>Last 5 chats</strong></div>
+                    <div class="list-group list-group-flush">
+                        @foreach (var c in (List<BuildWorkflow.Models.ChatSession>)ViewBag.RecentChats)
+                        {
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div class="small">
+                                    <div class="fw-semibold">@(string.IsNullOrWhiteSpace(c.Title) ? "Untitled chat" : c.Title)</div>
+                                    <div class="text-muted">@c.UpdatedAt.ToString("g")</div>
+                                </div>
+                                <a asp-controller="Chat" asp-action="Index" class="btn btn-sm btn-outline-primary">Continue</a>
+                            </div>
+                        }
+                        @if (((List<BuildWorkflow.Models.ChatSession>)ViewBag.RecentChats).Count == 0)
+                        {
+                            <div class="list-group-item text-muted small">No chats yet.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        @if (ViewBag.CanWorkflowWrite == true || (ViewBag.RecentWorkflows as List<BuildWorkflow.Models.WorkflowDefinition>)?.Any() == true)
+        {
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header"><strong>Last 5 workflows</strong></div>
+                    <div class="list-group list-group-flush">
+                        @foreach (var w in (List<BuildWorkflow.Models.WorkflowDefinition>)ViewBag.RecentWorkflows)
+                        {
+                            <div class="list-group-item d-flex justify-content-between align-items-center">
+                                <div class="small">
+                                    <div class="fw-semibold">@w.Name</div>
+                                    <div class="text-muted">@w.UpdatedAt.ToString("g")</div>
+                                </div>
+                                <a href="/Workflow/Manage?id=@w.Id" class="btn btn-sm btn-outline-secondary">Open</a>
+                            </div>
+                        }
+                        @if (((List<BuildWorkflow.Models.WorkflowDefinition>)ViewBag.RecentWorkflows).Count == 0)
+                        {
+                            <div class="list-group-item text-muted small">No workflows yet.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header"><strong>Next upcoming schedules</strong></div>
+                <div class="list-group list-group-flush">
+                    @foreach (var s in (List<BuildWorkflow.Controllers.WorkflowScheduleView>)ViewBag.UpcomingSchedules)
+                    {
+                        <div class="list-group-item small">
+                            <div class="fw-semibold">@s.WorkflowName</div>
+                            <div class="text-muted">@s.Schedule.NextRunAt?.ToString("g") (@s.Schedule.ScheduleType)</div>
+                        </div>
+                    }
+                    @if (((List<BuildWorkflow.Controllers.WorkflowScheduleView>)ViewBag.UpcomingSchedules).Count == 0)
+                    {
+                        <div class="list-group-item text-muted small">No upcoming schedules.</div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}

@@ -1,4 +1,4 @@
-using BuildWorkflow.Data;
+﻿using BuildWorkflow.Data;
 using BuildWorkflow.Models;
 using BuildWorkflow.Services;
 using BuildWorkflow.Services;
@@ -60,7 +60,7 @@ public class AccountController : Controller
             return View();
         }
 
-        if (user == null || !user.IsActive || user.Password != password)
+        if (user == null || !user.IsActive || !PasswordHasher.Verify(password, user.PasswordHash))
         {
             if (user != null)
             {
@@ -177,7 +177,7 @@ public class AccountController : Controller
             return NotFound();
         }
 
-        if (string.IsNullOrWhiteSpace(currentPassword) || user.Password != currentPassword)
+        if (string.IsNullOrWhiteSpace(currentPassword) || !PasswordHasher.Verify(currentPassword, user.PasswordHash))
         {
             TempData["ProfileError"] = "Current password is incorrect.";
             return RedirectToAction("Profile");

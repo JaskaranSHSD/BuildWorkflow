@@ -22,6 +22,12 @@ public class KnowledgeSearchController : Controller
         var userId = Guid.Parse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!);
         var isAdmin = User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin");
 
+        var dbUser = await _db.Users.FindAsync(userId);
+        if (!isAdmin && (dbUser == null || !dbUser.HasModulePermission(UserModulePermission.RagRead)))
+        {
+            return Forbid();
+        }
+
         var buckets = isAdmin
             ? await _db.RagBuckets.Where(b => b.IsActive).OrderBy(b => b.Name).ToListAsync(ct)
             : await _db.UserRagBuckets.Where(a => a.UserId == userId)

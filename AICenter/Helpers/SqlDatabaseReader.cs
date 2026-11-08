@@ -4,11 +4,73 @@ using Npgsql;
 using System.Data;
 using System.Data.Common;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace BuildWorkflow.AICenter.Helpers;
 
 public static class SqlDatabaseReader
 {
+    // Forbidden patterns that indicate potential SQL injection attempts
+    private static readonly Regex[] ForbiddenPatterns = new[]
+    {
+        new Regex(@"\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE|MERGE|REPLACE|BULK|OPENROWSET|OPENDATASOURCE)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\b(UNION\s+(ALL\s+)?SELECT)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\b(WAITFOR\s+DELAY|BENCHMARK\s*\()\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\b(SLEEP\s*\()\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\b(XP_CMDSHELL|SP_OACREATE|SP_OAMETHOD)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\b(INTO\s+(OUTFILE|DUMPFILE))\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"\b(LOAD_FILE\s*\()\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        new Regex(@"--", RegexOptions.Compiled), // SQL comments
+        new Regex(@"/\*", RegexOptions.Compiled), // Block comments start
+        new Regex(@"\*/", RegexOptions.Compiled), // Block comments end
+        new Regex(@"\b(DECLARE|SET\s+@)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), // Variable declarations
+        new Regex(@"\b(CAST|CONVERT)\s*\(\s*\w+\s+AS\s+\w+", RegexOptions.IgnoreCase | RegexOptions.Compiled), // Type casting that could be abused
+    };
+
+    private static void ValidateReadOnlyQuery(string sql)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            throw new InvalidOperationException("Query cannot be empty.");
+        }
+
+        var trimmed = sql.Trim();
+
+        // Must start with SELECT or WITH (for CTEs)
+        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) &&
+            !trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Only read-only SELECT or WITH queries are allowed.");
+        }
+
+        // No semicolons (multiple statements)
+        trimmed = trimmed.TrimEnd(';').Trim();
+        if (trimmed.Contains(';'))
+        {
+            throw new InvalidOperationException("Multiple SQL statements are not allowed.");
+        }
+
+        // Check for forbidden patterns
+        foreach (var pattern in ForbiddenPatterns)
+        {
+            if (pattern.IsMatch(trimmed))
+            {
+                throw new InvalidOperationException("Query contains forbidden patterns.");
+            }
+        }
+
+        // Additional validation: ensure no dangerous function calls
+        var dangerousFunctions = new[] { "pg_read_file", "pg_write_file", "pg_ls_dir", "xp_", "sp_", "fn_", "utl_file", "dbms_", "sys.", "information_schema." };
+        var lowerSql = trimmed.ToLowerInvariant();
+        foreach (var func in dangerousFunctions)
+        {
+            if (lowerSql.Contains(func))
+            {
+                throw new InvalidOperationException($"Query contains forbidden function: {func}");
+            }
+        }
+    }
+
     public static async Task<string> GetSchemaAsync(string connectionString, string databaseType, CancellationToken cancellationToken = default)
     {
         var dbType = Normalize(databaseType);
@@ -74,18 +136,8 @@ public static class SqlDatabaseReader
 
     public static async Task<DataTable> ExecuteReadOnlyQueryToTableAsync(string connectionString, string databaseType, string sql, CancellationToken cancellationToken = default)
     {
-        var trimmed = sql.Trim();
-        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) &&
-            !trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Only read-only SELECT or WITH queries are allowed.");
-        }
-
-        trimmed = trimmed.TrimEnd(';').Trim();
-        if (trimmed.Contains(';'))
-        {
-            throw new InvalidOperationException("Multiple SQL statements are not allowed.");
-        }
+        ValidateReadOnlyQuery(sql);
+        var trimmed = sql.Trim().TrimEnd(';').Trim();
 
         var dbType = Normalize(databaseType);
         var table = new DataTable();
@@ -120,18 +172,8 @@ public static class SqlDatabaseReader
 
     public static async Task<string> ExecuteReadOnlyQueryAsync(string connectionString, string databaseType, string sql, CancellationToken cancellationToken = default)
     {
-        var trimmed = sql.Trim();
-        if (!trimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase) &&
-            !trimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Only read-only SELECT or WITH queries are allowed.");
-        }
-
-        trimmed = trimmed.TrimEnd(';').Trim();
-        if (trimmed.Contains(';'))
-        {
-            throw new InvalidOperationException("Multiple SQL statements are not allowed.");
-        }
+        ValidateReadOnlyQuery(sql);
+        var trimmed = sql.Trim().TrimEnd(';').Trim();
 
         var dbType = Normalize(databaseType);
         var rows = new List<Dictionary<string, object?>>();

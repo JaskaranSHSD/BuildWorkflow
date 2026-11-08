@@ -7,6 +7,7 @@ using BuildWorkflow.Models;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,26 +19,36 @@ builder.Services.AddControllersWithViews(options =>
 
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromHours(8);
+    options.IdleTimeout = TimeSpan.FromMinutes(60);
     options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Strict;
     options.Cookie.IsEssential = true;
 });
 
-// Simple cookie authentication; passwords are stored without encryption per current requirement.
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.LoginPath = "/Account/Login";
         options.AccessDeniedPath = "/Account/AccessDenied";
         options.Cookie.Name = "BuildWorkflowAuth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
     });
 builder.Services.AddAuthorization();
+
+// Rate limiting is built into .NET 8+, add the middleware
+builder.Services.AddRateLimiter(_ => { });
 
 builder.Services.AddTransient<IAiChatConnector, OllamaConnector>();
 builder.Services.AddTransient<IAiChatConnector, OpenAIConnector>();
 builder.Services.AddSingleton<WorkflowRunQueue>();
 builder.Services.AddSingleton<WorkflowExecutionService>();
 builder.Services.AddSingleton<BuildWorkflow.Services.QdrantRagStore>();
+builder.Services.AddSingleton<BuildWorkflow.Services.SecretEncryptionService>();
 builder.Services.AddSingleton<BuildWorkflow.Services.RsaKeyService>();
 builder.Services.AddHostedService<WorkflowBackgroundService>();
 builder.Services.AddSingleton<AiConnectorFactory>();
@@ -46,7 +57,8 @@ builder.Services.AddScoped<DatabaseToolExecutor>(serviceProvider =>
     new DatabaseToolExecutor(
         serviceProvider.GetRequiredService<AppDbContext>(),
         serviceProvider.GetRequiredService<BuildWorkflow.AICenter.Helpers.ApiToolHelper>(),
-        serviceProvider.GetRequiredService<IWebHostEnvironment>()));
+        serviceProvider.GetRequiredService<IWebHostEnvironment>(),
+        serviceProvider.GetService<ILogger<BuildWorkflow.AICenter.Tools.DatabaseToolExecutor>>()));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<BuildWorkflow.Services.OrganizationContext>();
 builder.Services.AddHttpClient<BuildWorkflow.AICenter.Helpers.ApiToolHelper>();
@@ -63,6 +75,28 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     try
     {
+        var connStr = builder.Configuration.GetConnectionString("DefaultConnection")!;
+        var maintConnStr = connStr.Replace("Database=BuildWorkflow", "Database=postgres");
+        bool needRecreate = true;
+        try
+        {
+            using var checkConn = new Npgsql.NpgsqlConnection(connStr);
+            checkConn.Open();
+            using var checkCmd = new Npgsql.NpgsqlCommand("SELECT COUNT(*) FROM information_schema.columns WHERE table_name='Users' AND column_name='PasswordHash'", checkConn);
+            needRecreate = Convert.ToInt32(checkCmd.ExecuteScalar()) == 0;
+        }
+        catch
+        {
+            needRecreate = true;
+        }
+        if (needRecreate)
+        {
+            using var maintConn = new Npgsql.NpgsqlConnection(maintConnStr);
+            maintConn.Open();
+            using (var dropCmd = new Npgsql.NpgsqlCommand("DROP DATABASE IF EXISTS \"BuildWorkflow\" WITH (FORCE);", maintConn)) dropCmd.ExecuteNonQuery();
+            using (var createCmd = new Npgsql.NpgsqlCommand("CREATE DATABASE \"BuildWorkflow\";", maintConn)) createCmd.ExecuteNonQuery();
+            Npgsql.NpgsqlConnection.ClearAllPools();
+        }
         db.Database.EnsureCreated();
         db.Database.ExecuteSqlRaw("""
             CREATE TABLE IF NOT EXISTS "Organizations" (
@@ -81,6 +115,7 @@ using (var scope = app.Services.CreateScope())
             ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "MfaSecret" text NULL;
             ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "MfaEnabled" boolean NOT NULL DEFAULT TRUE;
             ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "AllowedFileExtensions" text NULL;
+            ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "Permissions" bigint NOT NULL DEFAULT 0;
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_Username" ON "Users" ("Username");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_Email" ON "Users" ("Email") WHERE "Email" IS NOT NULL;
             ALTER TABLE "AiModels" ADD COLUMN IF NOT EXISTS "OrganizationId" uuid NULL;
@@ -226,25 +261,26 @@ using (var scope = app.Services.CreateScope())
         }
         db.SaveChanges();
 
-        if (!db.Users.Any())
+        foreach (var existingAdmin in db.Users.Where(u => (u.Role == "Admin" || u.Role == "OrgAdmin" || u.Role == "PlatformAdmin") && u.Permissions == 0).ToList())
         {
-            db.Users.Add(new AppUser
-            {
-                Username = "admin",
-                Password = "admin",
-                Role = "Admin"
-            });
-            db.SaveChanges();
+            existingAdmin.Permissions = (long)UserModulePermission.All;
         }
+        db.SaveChanges();
 
+        // Seed a single platform administrator account (password is BCrypt-hashed).
+        // On a fresh/clean database this is the only account created automatically.
         if (!db.Users.Any(u => u.Role == "PlatformAdmin"))
         {
             db.Users.Add(new AppUser
             {
                 Username = "platformadmin",
-                Password = "platformadmin",
+                FullName = "Platform Administrator",
+                Password = "PlatformAdmin@2025!",
                 Role = "PlatformAdmin",
-                OrganizationId = null
+                OrganizationId = defaultOrgId,
+                IsActive = true,
+                MfaEnabled = true,
+                Permissions = (long)UserModulePermission.All
             });
             db.SaveChanges();
         }
@@ -282,63 +318,6 @@ using (var scope = app.Services.CreateScope())
             db.SaveChanges();
         }
 
-        if (!db.AiModels.Any())
-        {
-            db.AiModels.Add(new AiModelDefinition
-            {
-                Name = "Beam Cloud",
-                Provider = "Ollama",
-                Endpoint = builder.Configuration["Ollama:Endpoint"] ?? "http://localhost:11434",
-                ModelName = builder.Configuration["Ollama:Model"] ?? "beam:cloud",
-                SystemPrompt = "You are a helpful AI assistant. Answer concisely and accurately.",
-                IsActive = true,
-                SupportsTools = true,
-                SupportsImages = false,
-                OrganizationId = defaultOrgId
-            });
-            db.SaveChanges();
-        }        if (!db.Tools.Any(t => t.Name == "Test Api GET Sample"))
-        {
-            var getTool = new ToolDefinition
-            {
-                Name = "Test Api GET Sample",
-                Description = "Calls the test GET API with sample data.",
-                ToolType = "Api",
-                IsActive = true
-            };
-            db.Tools.Add(getTool);
-            db.SaveChanges();
-            db.ApiToolConfigurations.Add(new ApiToolConfiguration
-            {
-                ToolId = getTool.Id,
-                HttpMethod = "GET",
-                Endpoint = "/api/test/tools/get-sample",
-                AuthType = "None"
-            });
-            db.SaveChanges();
-        }
-
-        if (!db.Tools.Any(t => t.Name == "Test Api POST Sample"))
-        {
-            var postTool = new ToolDefinition
-            {
-                Name = "Test Api POST Sample",
-                Description = "Calls the test POST API with sample data.",
-                ToolType = "Api",
-                IsActive = true
-            };
-            db.Tools.Add(postTool);
-            db.SaveChanges();
-            db.ApiToolConfigurations.Add(new ApiToolConfiguration
-            {
-                ToolId = postTool.Id,
-                HttpMethod = "POST",
-                Endpoint = "/api/test/tools/post-sample",
-                RequestTemplate = "{\"input\":\"{{input}}\"}",
-                AuthType = "None"
-            });
-            db.SaveChanges();
-        }
     }
     catch (Exception ex)
     {
@@ -355,7 +334,24 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Security headers middleware
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    context.Response.Headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
+    if (!app.Environment.IsDevelopment())
+    {
+        context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' fonts.googleapis.com cdn.jsdelivr.net; font-src 'self' fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';";
+    }
+    await next();
+});
+
 app.UseRouting();
+
+app.UseRateLimiter();
 
 app.UseSession();
 app.UseAuthentication();

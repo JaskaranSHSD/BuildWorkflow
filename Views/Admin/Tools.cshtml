@@ -50,6 +50,7 @@
                                 <option value="ExportWord">Export Word</option>
                                 <option value="Mcp">MCP Server</option>
                                 <option value="WorkflowManager">Workflow Manager</option>
+                                <option value="KnowledgeMemory">Knowledge Memory</option>
                             </select>
                         </div>
                         <div class="col-md-4" id="httpMethodField">
@@ -166,6 +167,12 @@
 <div class="card p-3">
     <h5 class="mb-3">Existing Tools</h5>
     <div class="table-responsive">
+<form method="get" asp-action="Tools" class="mb-3">
+    <div class="input-group">
+        <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search tools by name or description…" />
+        <button class="btn btn-outline-secondary" type="submit">Search</button>
+    </div>
+</form>
         <table class="table align-middle">
             <thead>
                 <tr>
@@ -209,12 +216,6 @@
     </div>
 </div>
 
-<form method="get" asp-action="Tools" class="mb-3">
-    <div class="input-group">
-        <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search tools by name or descriptionâ€¦" />
-        <button class="btn btn-outline-secondary" type="submit">Search</button>
-    </div>
-</form>
 <p class="small text-muted mb-2">Total records: @(ViewBag.TotalCount ?? 0)</p>
 @if ((int)(ViewBag.TotalPages ?? 1) > 1)
 {

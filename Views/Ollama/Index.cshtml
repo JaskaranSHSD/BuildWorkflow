@@ -1,0 +1,62 @@
+@model IEnumerable<dynamic>
+@{
+    ViewData["Title"] = "Ollama";
+}
+<div class="container">
+    <h2>Ollama Models</h2>
+    <p class="text-muted">Endpoint: @ViewBag.Endpoint</p>
+
+    @if (TempData["OllamaMessage"] is string msg)
+    {
+        <div class="alert alert-success">@msg</div>
+    }
+    @if (TempData["OllamaError"] is string err)
+    {
+        <div class="alert alert-danger">@err</div>
+    }
+
+    <form method="get" asp-action="Index" class="row g-2 mb-3">
+        <div class="col-md-6">
+            <input type="text" name="endpoint" class="form-control" value="@ViewBag.Endpoint" placeholder="http://localhost:11434" required />
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-secondary w-100">Set URL</button>
+        </div>
+    </form>
+
+    <form method="post" asp-action="Pull" class="row g-2 mb-3">
+        @Html.AntiForgeryToken()
+        <div class="col-md-6">
+            <input type="text" name="modelName" class="form-control" placeholder="Model to pull (e.g. llama3.2)" required />
+        </div>
+        <div class="col-md-3">
+            <button type="submit" class="btn btn-primary w-100">Pull</button>
+        </div>
+    </form>
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Size</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var m in Model ?? Enumerable.Empty<dynamic>())
+            {
+                <tr>
+                    <td>@m.Name</td>
+                    <td>@m.Size</td>
+                    <td>
+                        <form method="post" asp-action="Delete" class="d-inline">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="modelName" value="@m.Name" />
+                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete @m.Name?');">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>

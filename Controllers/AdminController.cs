@@ -23,13 +23,9 @@ public class AdminController : Controller
         _qdrant = qdrant;
     }
 
-    public async Task<IActionResult> Index()
+    public IActionResult Index()
     {
-        ViewBag.ModelCount = await _db.AiModels.CountAsync();
-        ViewBag.ToolCount = await _db.Tools.CountAsync();
-        ViewBag.BucketCount = await _db.RagBuckets.CountAsync();
-        ViewBag.UserCount = await _db.Users.CountAsync();
-        return View();
+        return RedirectToAction("Models");
     }
 
     public async Task<IActionResult> Models(int page = 1, string? search = null)
@@ -61,6 +57,7 @@ public class AdminController : Controller
     {
         if (!string.IsNullOrWhiteSpace(model.Name) && !string.IsNullOrWhiteSpace(model.ModelName))
         {
+            model.OrganizationId = IsPlatformAdmin() ? model.OrganizationId : CurrentOrganizationId();
             _db.AiModels.Add(model);
             await _db.SaveChangesAsync();
         }
@@ -73,23 +70,47 @@ public class AdminController : Controller
     {
         if (model.Id == Guid.Empty)
         {
+            TempData["Error"] = "Invalid model identifier.";
             return RedirectToAction(nameof(Models));
         }
 
         var existing = await _db.AiModels.FirstOrDefaultAsync(m => m.Id == model.Id);
-        if (existing != null && CanAccessOrganization(existing.OrganizationId) && !string.IsNullOrWhiteSpace(model.Name) && !string.IsNullOrWhiteSpace(model.ModelName))
+        if (existing == null)
         {
-            existing.Name = model.Name.Trim();
-            existing.Provider = string.IsNullOrWhiteSpace(model.Provider) ? existing.Provider : model.Provider.Trim();
-            existing.Endpoint = string.IsNullOrWhiteSpace(model.Endpoint) ? existing.Endpoint : model.Endpoint.Trim();
-            existing.ModelName = model.ModelName.Trim();
-            existing.SystemPrompt = string.IsNullOrWhiteSpace(model.SystemPrompt) ? null : model.SystemPrompt.Trim();
-            existing.IsActive = model.IsActive;
-            existing.SupportsTools = model.SupportsTools;
-            existing.SupportsImages = model.SupportsImages;
-            await _db.SaveChangesAsync();
+            TempData["Error"] = "Model not found.";
+            return RedirectToAction(nameof(Models));
         }
 
+        if (!CanAccessOrganization(existing.OrganizationId))
+        {
+            TempData["Error"] = "You do not have permission to update this model.";
+            return RedirectToAction(nameof(Models));
+        }
+
+        if (string.IsNullOrWhiteSpace(model.Name))
+        {
+            TempData["Error"] = "Model name is required.";
+            return RedirectToAction(nameof(Models));
+        }
+
+        if (string.IsNullOrWhiteSpace(model.ModelName))
+        {
+            TempData["Error"] = "Model name (for the provider) is required.";
+            return RedirectToAction(nameof(Models));
+        }
+
+        existing.Name = string.IsNullOrWhiteSpace(model.Name) ? string.Empty : model.Name.Trim();
+        existing.Provider = string.IsNullOrWhiteSpace(model.Provider) ? existing.Provider : model.Provider.Trim();
+        existing.Endpoint = string.IsNullOrWhiteSpace(model.Endpoint) ? existing.Endpoint : model.Endpoint.Trim();
+        existing.ModelName = string.IsNullOrWhiteSpace(model.ModelName) ? string.Empty : model.ModelName.Trim();
+        existing.SystemPrompt = string.IsNullOrWhiteSpace(model.SystemPrompt) ? null : model.SystemPrompt.Trim();
+        existing.IsActive = model.IsActive;
+        existing.SupportsTools = model.SupportsTools;
+        existing.SupportsImages = model.SupportsImages;
+
+        await _db.SaveChangesAsync();
+
+        TempData["Success"] = "Model updated successfully.";
         return RedirectToAction(nameof(Models));
     }
 
@@ -322,7 +343,6 @@ public class AdminController : Controller
             _db.Tools.Remove(tool);
             await _db.SaveChangesAsync();
         }
-
         return RedirectToAction(nameof(Tools));
     }
 
@@ -830,7 +850,7 @@ public class AdminController : Controller
         return View(items);
     }
 
-    public async Task<IActionResult> ManageUser(Guid id)
+    public async Task<IActionResult> ManageUser(Guid id, string? toolSearch = null, string? bucketSearch = null, string? modelSearch = null)
     {
         var user = await _db.Users.FindAsync(id);
         if (user == null || string.Equals(user.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
@@ -862,11 +882,18 @@ public class AdminController : Controller
         {
             ViewBag.MfaOtpAuthUri = $"otpauth://totp/BuildWorkflow:{user.Username}?secret={user.MfaSecret}&issuer=BuildWorkflow";
         }
-        ViewBag.Models = await _db.AiModels.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync();
-        ViewBag.Tools = await _db.Tools.Where(t => t.IsActive).OrderBy(t => t.Name).ToListAsync();
+        var modelQuery = _db.AiModels.Where(m => m.IsActive);
+        if (!string.IsNullOrWhiteSpace(modelSearch)) { var mt = modelSearch.Trim().ToLower(); modelQuery = modelQuery.Where(m => (m.Name ?? "").ToLower().Contains(mt) || (m.ModelName ?? "").ToLower().Contains(mt) || (m.Provider ?? "").ToLower().Contains(mt)); }
+        ViewBag.Models = await modelQuery.OrderBy(m => m.Name).ToListAsync();
+
+        var toolQuery = _db.Tools.Where(t => t.IsActive);
+        if (!string.IsNullOrWhiteSpace(toolSearch)) { var tt = toolSearch.Trim().ToLower(); toolQuery = toolQuery.Where(t => (t.Name ?? "").ToLower().Contains(tt) || (t.Description ?? "").ToLower().Contains(tt)); }
+        ViewBag.Tools = await toolQuery.OrderBy(t => t.Name).ToListAsync();
         ViewBag.ToolGroups = await _db.ToolGroups.OrderBy(g => g.Name).ToListAsync();
         ViewBag.KnowledgeGroups = await _db.KnowledgeGroups.OrderBy(g => g.Name).ToListAsync();
-        var ragBuckets = await _db.RagBuckets.Include(b => b.KnowledgeGroup).Where(b => b.IsActive).OrderBy(b => b.Name).ToListAsync();
+        var bucketBase = _db.RagBuckets.Include(b => b.KnowledgeGroup).Where(b => b.IsActive);
+        if (!string.IsNullOrWhiteSpace(bucketSearch)) { var bt = bucketSearch.Trim().ToLower(); bucketBase = bucketBase.Where(b => (b.Name ?? "").ToLower().Contains(bt) || (b.Description ?? "").ToLower().Contains(bt)); }
+        var ragBuckets = await bucketBase.OrderBy(b => b.Name).ToListAsync();
         ViewBag.RagBuckets = ragBuckets;
         ViewBag.Buckets = ragBuckets;
         ViewBag.AssignedModels = await _db.UserAiModels
@@ -884,12 +911,15 @@ public class AdminController : Controller
             .Include(p => p.RagBucket)
             .OrderBy(p => p.RagBucket.Name)
             .ToListAsync();
+        ViewBag.ToolSearch = toolSearch;
+        ViewBag.BucketSearch = bucketSearch;
+        ViewBag.ModelSearch = modelSearch;
         return View(user);
     }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UpdateUser(Guid id, string username, string? fullName, string? email, string? password, string role, bool requirePasswordChange = false, string[]? allowedFileExtensions = null)
+    public async Task<IActionResult> UpdateUser(Guid id, string username, string? fullName, string? email, string? password, string role, bool requirePasswordChange = false, string[]? allowedFileExtensions = null, long[]? permissions = null)
     {
         var user = await _db.Users.FindAsync(id);
         if (user == null || string.IsNullOrWhiteSpace(username))
@@ -914,9 +944,19 @@ public class AdminController : Controller
             }
         }
 
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(fullName) || string.IsNullOrWhiteSpace(email))
+        {
+            TempData["Error"] = "Username, full name, and email are required.";
+            return RedirectToAction(nameof(ManageUser), new { id });
+        }
+        if (!IsValidEmail(email))
+        {
+            TempData["Error"] = "Please enter a valid email address.";
+            return RedirectToAction(nameof(ManageUser), new { id });
+        }
         user.Username = username.Trim();
-        user.FullName = string.IsNullOrWhiteSpace(fullName) ? null : fullName.Trim();
-        user.Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
+        user.FullName = fullName.Trim();
+        user.Email = email.Trim();
         user.MustChangePassword = requirePasswordChange;
         if (allowedFileExtensions != null)
         {
@@ -939,6 +979,17 @@ public class AdminController : Controller
             return RedirectToAction(nameof(ManageUser), new { id });
         }
 
+        if (permissions != null)
+        {
+            long combined = 0;
+            foreach (var p in permissions) combined |= p;
+            user.Permissions = combined;
+        }
+        if (user.IsAdmin)
+        {
+            user.Permissions = (long)UserModulePermission.All;
+        }
+
         if (!string.IsNullOrWhiteSpace(password))
         {
             if (!IsStrongPassword(password))
@@ -955,18 +1006,36 @@ public class AdminController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> AssignUserModel(Guid userId, Guid modelId)
+    public async Task<IActionResult> AssignUserModel(Guid userId, Guid? modelId = null, Guid[]? modelIds = null)
     {
-        if (!await CanManageUserAsync(userId) || !_db.AiModels.Any(m => m.Id == modelId))
+        if (!await CanManageUserAsync(userId))
         {
             return RedirectToAction(nameof(ManageUser), new { id = userId });
         }
 
-        if (!_db.UserAiModels.Any(p => p.UserId == userId && p.AiModelId == modelId))
+        var ids = new List<Guid>();
+        if (modelId.HasValue && modelId.Value != Guid.Empty) ids.Add(modelId.Value);
+        if (modelIds != null) ids.AddRange(modelIds.Where(x => x != Guid.Empty));
+        ids = ids.Distinct().ToList();
+        ids = ids.Where(id => _db.AiModels.Any(m => m.Id == id)).ToList();
+
+        var selected = ids.ToHashSet();
+        var assigned = await _db.UserAiModels.Where(p => p.UserId == userId).ToListAsync();
+
+        foreach (var id in selected)
         {
-            _db.UserAiModels.Add(new UserAiModel { UserId = userId, AiModelId = modelId });
-            await _db.SaveChangesAsync();
+            if (!assigned.Any(p => p.AiModelId == id))
+            {
+                _db.UserAiModels.Add(new UserAiModel { UserId = userId, AiModelId = id });
+            }
         }
+
+        foreach (var assignment in assigned.Where(p => !selected.Contains(p.AiModelId)))
+        {
+            _db.UserAiModels.Remove(assignment);
+        }
+
+        await _db.SaveChangesAsync();
         return RedirectToAction(nameof(ManageUser), new { id = userId });
     }
 
@@ -1136,8 +1205,16 @@ public class AdminController : Controller
     private bool CanAccessOrganization(Guid? organizationId)
     {
         if (IsPlatformAdmin()) return true;
+        if (!organizationId.HasValue)
+        {
+            return false; // Deny access to resources without organization
+        }
         var currentOrg = CurrentOrganizationId();
-        return currentOrg.HasValue && currentOrg.Value == organizationId;
+        if (!currentOrg.HasValue)
+        {
+            return false; // Deny if current user has no organization
+        }
+        return currentOrg.Value == organizationId;
     }
 
     private async Task<bool> CanManageUserAsync(Guid userId)
@@ -1151,21 +1228,28 @@ public class AdminController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> CreateUser(AppUser user)
     {
-        if (string.IsNullOrWhiteSpace(user.Username) || string.IsNullOrWhiteSpace(user.Password))
+        user.Username = (user.Username ?? string.Empty).Trim();
+        user.FullName = (user.FullName ?? string.Empty).Trim();
+        user.Email = (user.Email ?? string.Empty).Trim();
+        user.Password = (user.Password ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(user.Username) || string.IsNullOrWhiteSpace(user.FullName)
+            || string.IsNullOrWhiteSpace(user.Email) || string.IsNullOrWhiteSpace(user.Password))
         {
+            TempData["Error"] = "Username, full name, email, and password are required.";
             return RedirectToAction(nameof(Users));
         }
-
-        user.Username = user.Username.Trim();
-        user.Password = user.Password.Trim();
+        if (!IsValidEmail(user.Email))
+        {
+            TempData["Error"] = "Please enter a valid email address.";
+            return RedirectToAction(nameof(Users));
+        }
         user.MustChangePassword = true;
         if (!IsStrongPassword(user.Password))
         {
             TempData["Error"] = "Password must be at least 8 characters and include uppercase, lowercase, number, and special character.";
             return RedirectToAction(nameof(Users));
         }
-        if (!string.IsNullOrWhiteSpace(user.Email)) user.Email = user.Email.Trim();
-        if (!string.IsNullOrWhiteSpace(user.FullName)) user.FullName = user.FullName.Trim();
 
         var duplicate = _db.Users.Any(u =>
             u.Username == user.Username ||
@@ -1248,5 +1332,18 @@ public class AdminController : Controller
             password.Any(char.IsUpper) && password.Any(char.IsLower) &&
             password.Any(char.IsDigit) && password.Any(c => !char.IsLetterOrDigit(c));
     }
-}
 
+    private static bool IsValidEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return false;
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email.Trim());
+            return addr.Address == email.Trim();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

@@ -10,6 +10,7 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace BuildWorkflow.AICenter.Tools;
 
@@ -25,12 +26,14 @@ public class DatabaseToolExecutor
     private readonly AppDbContext _db;
     private readonly Helpers.ApiToolHelper _apiHelper;
     private readonly IWebHostEnvironment _environment;
+    private readonly ILogger<DatabaseToolExecutor>? _logger;
 
-    public DatabaseToolExecutor(AppDbContext db, Helpers.ApiToolHelper apiHelper, IWebHostEnvironment environment)
+    public DatabaseToolExecutor(AppDbContext db, Helpers.ApiToolHelper apiHelper, IWebHostEnvironment environment, ILogger<DatabaseToolExecutor>? logger = null)
     {
         _db = db;
         _apiHelper = apiHelper;
         _environment = environment;
+        _logger = logger;
     }
 
     public async Task<IList<AITool>> GetAllowedToolsAsync(Guid? userId, IEnumerable<Guid>? selectedToolIds = null, CancellationToken cancellationToken = default)
@@ -82,7 +85,7 @@ public class DatabaseToolExecutor
             void Add(AITool t)
             {
                 if (t is AIFunction af)
-                    t = new LoggingAIFunction(af, tool.Id, tool.Name, tool.ToolType, userId, _db);
+                    t = new LoggingAIFunction(af, tool.Id, tool.Name, tool.ToolType, userId, _db, _logger);
                 aiTools.Add(t);
             }
 
@@ -134,7 +137,7 @@ public class DatabaseToolExecutor
             }
             else if (string.Equals(tool.ToolType, "Mcp", StringComparison.OrdinalIgnoreCase))
             {
-                aiTools.AddRange(await CreateMcpToolsAsync(tool, cancellationToken));
+                aiTools.AddRange(await CreateMcpToolsAsync(tool, userId, cancellationToken));
             }
             else if (string.Equals(tool.ToolType, "WorkflowManager", StringComparison.OrdinalIgnoreCase))
             {
@@ -143,25 +146,98 @@ public class DatabaseToolExecutor
                     Add(CreateWorkflowManagerTool(userId.Value));
                 }
             }
+            else if (string.Equals(tool.ToolType, "KnowledgeMemory", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(tool.ToolType, "UserKnowledge", StringComparison.OrdinalIgnoreCase))
+            {
+                if (userId.HasValue)
+                {
+                    Add(CreateUserKnowledgeMemoryTool(tool, userId.Value));
+                }
+            }
             else
             {
                 Add(CreateTool(tool));
             }
         }
 
-        if (userId.HasValue)
-        {
-            aiTools.Add(CreateWorkflowManagerTool(userId.Value));
-        }
+        // WorkflowManager tool removed from automatic inclusion - must be explicitly configured as a tool
+        // if (userId.HasValue)
+        // {
+        //     aiTools.Add(CreateWorkflowManagerTool(userId.Value));
+        // }
 
         return aiTools;
+    }
+
+    private AITool CreateUserKnowledgeMemoryTool(ToolDefinition tool, Guid userId)
+    {
+        return AIFunctionFactory.Create(
+            async (string note, string? category = null) =>
+            {
+                if (string.IsNullOrWhiteSpace(note))
+                {
+                    return "No information was provided to store.";
+                }
+
+                var user = await _db.Users.FindAsync(userId);
+                if (user == null || !user.IsActive)
+                {
+                    return "Unable to store knowledge for the current user.";
+                }
+
+                var bucketName = $"{user.Username} Memory";
+                var bucket = await _db.RagBuckets.FirstOrDefaultAsync(b =>
+                    b.CreatedByUserId == userId && b.Name == bucketName);
+
+                if (bucket == null)
+                {
+                    bucket = new RagBucket
+                    {
+                        Name = bucketName,
+                        Description = $"Automatically created knowledge memory for {user.Username}.",
+                        StoreType = "PostgreSQL",
+                        OrganizationId = user.OrganizationId,
+                        CreatedByUserId = userId,
+                        UpdatedByUserId = userId,
+                        IsActive = true
+                    };
+                    _db.RagBuckets.Add(bucket);
+                    await _db.SaveChangesAsync();
+
+                    if (!_db.UserRagBuckets.Any(x => x.UserId == userId && x.RagBucketId == bucket.Id))
+                    {
+                        _db.UserRagBuckets.Add(new UserRagBucket
+                        {
+                            UserId = userId,
+                            RagBucketId = bucket.Id
+                        });
+                        await _db.SaveChangesAsync();
+                    }
+                }
+
+                var document = new RagDocument
+                {
+                    RagBucketId = bucket.Id,
+                    FileName = $"memory-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.txt",
+                    Content = $"[{DateTimeOffset.UtcNow:O}] {(!string.IsNullOrWhiteSpace(category) ? category + ": " : string.Empty)}{note}",
+                    CreatedByUserId = userId,
+                    UpdatedByUserId = userId
+                };
+
+                _db.RagDocuments.Add(document);
+                await _db.SaveChangesAsync();
+
+                return $"Stored the information in knowledge bucket '{bucket.Name}'.";
+            },
+            name: SanitizeName(string.IsNullOrWhiteSpace(tool.Name) ? "SaveUserKnowledge" : tool.Name),
+            description: string.IsNullOrWhiteSpace(tool.Description) ? "Call this when the user shares durable information you should remember later (preferences, decisions, contacts, project details, action items). Stores a concise note in their personal knowledge memory for future chats and workflows." : tool.Description);
     }
 
     public AITool WrapTool(AITool tool, Guid? userId, string? name = null, string? type = null, Guid? toolId = null)
     {
         if (tool is AIFunction af)
         {
-            return new LoggingAIFunction(af, toolId, name ?? tool.Name, type, userId, _db);
+            return new LoggingAIFunction(af, toolId, name ?? tool.Name, type, userId, _db, _logger);
         }
         return tool;
     }
@@ -425,7 +501,7 @@ public class DatabaseToolExecutor
         }
     }
 
-    private async Task<List<AITool>> CreateMcpToolsAsync(ToolDefinition tool, CancellationToken cancellationToken)
+    private async Task<List<AITool>> CreateMcpToolsAsync(ToolDefinition tool, Guid? userId, CancellationToken cancellationToken)
     {
         var result = new List<AITool>();
         var endpoint = tool.ApiConfiguration?.Endpoint;
@@ -473,22 +549,26 @@ public class DatabaseToolExecutor
                     ? $"{tool.Name}: {mcpTool.Name}"
                     : mcpTool.Description;
 
-                result.Add(AIFunctionFactory.Create(
+                var mcpFunction = AIFunctionFactory.Create(
                     async (AIFunctionArguments arguments, CancellationToken ct) =>
                         await InvokeMcpToolAsync(endpoint, headers, mcpTool.Name, arguments, ct),
                     new AIFunctionFactoryOptions
                     {
                         Name = toolName,
                         Description = description
-                    }));
+                    });
+
+                result.Add(new LoggingAIFunction(mcpFunction, tool.Id, toolName, "Mcp", userId, _db, _logger));
             }
         }
         catch (Exception ex)
         {
-            result.Add(AIFunctionFactory.Create(
+            var errorFunction = AIFunctionFactory.Create(
                 (string input) => $"MCP server error ({tool.Name}): {ex.Message}",
                 name: SanitizeName(tool.Name),
-                description: $"MCP server {tool.Name} is unavailable."));
+                description: $"MCP server {tool.Name} is unavailable.");
+
+            result.Add(new LoggingAIFunction(errorFunction, tool.Id, tool.Name, "Mcp", userId, _db, _logger));
         }
 
         return result;
@@ -707,6 +787,9 @@ public class DatabaseToolExecutor
         }
 
         var trimmed = (input ?? string.Empty).Trim();
+        var allowedRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "TempFilesLocal", "sftp"));
+        Directory.CreateDirectory(allowedRoot);
+
         try
         {
             using var client = new SftpClient(config.Host, config.Port, config.Username, config.Password ?? string.Empty);
@@ -732,11 +815,19 @@ public class DatabaseToolExecutor
                 }
                 var localPath = parts[0].Trim();
                 var remotePath = parts[1].Trim();
-                if (!System.IO.File.Exists(localPath))
+
+                // Validate local path is within allowed directory
+                var fullLocalPath = Path.GetFullPath(localPath);
+                if (!fullLocalPath.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"Access denied: Local path must be within {allowedRoot}";
+                }
+
+                if (!System.IO.File.Exists(fullLocalPath))
                 {
                     return $"Local file not found: {localPath}";
                 }
-                using var stream = System.IO.File.OpenRead(localPath);
+                using var stream = System.IO.File.OpenRead(fullLocalPath);
                 client.UploadFile(stream, remotePath);
                 return $"Uploaded {localPath} to {remotePath}.";
             }
@@ -750,12 +841,20 @@ public class DatabaseToolExecutor
                 }
                 var remotePath = parts[0].Trim();
                 var localPath = parts[1].Trim();
-                var directory = Path.GetDirectoryName(localPath);
+
+                // Validate local path is within allowed directory
+                var fullLocalPath = Path.GetFullPath(localPath);
+                if (!fullLocalPath.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"Access denied: Local path must be within {allowedRoot}";
+                }
+
+                var directory = Path.GetDirectoryName(fullLocalPath);
                 if (!string.IsNullOrWhiteSpace(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
-                using var stream = System.IO.File.Create(localPath);
+                using var stream = System.IO.File.Create(fullLocalPath);
                 client.DownloadFile(remotePath, stream);
                 return $"Downloaded {remotePath} to {localPath}.";
             }
@@ -971,8 +1070,9 @@ public class DatabaseToolExecutor
         private readonly string? _toolType;
         private readonly Guid? _userId;
         private readonly AppDbContext _db;
+        private readonly ILogger? _logger;
 
-        public LoggingAIFunction(AIFunction inner, Guid? toolId, string? toolName, string? toolType, Guid? userId, AppDbContext db)
+        public LoggingAIFunction(AIFunction inner, Guid? toolId, string? toolName, string? toolType, Guid? userId, AppDbContext db, ILogger? logger = null)
         {
             _inner = inner;
             _toolId = toolId;
@@ -980,6 +1080,7 @@ public class DatabaseToolExecutor
             _toolType = toolType;
             _userId = userId;
             _db = db;
+            _logger = logger;
         }
 
         public override string Name => _inner.Name;
@@ -993,15 +1094,18 @@ public class DatabaseToolExecutor
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var input = arguments == null ? "{}" : System.Text.Json.JsonSerializer.Serialize(arguments);
+            _logger?.LogInformation("Tool invocation started: {ToolName} ({ToolType}) UserId={UserId}", _toolName, _toolType, _userId);
             try
             {
                 var result = await _inner.InvokeAsync(arguments, cancellationToken);
                 Log("Success", input, result?.ToString(), null, (int)sw.ElapsedMilliseconds);
+                _logger?.LogInformation("Tool invocation succeeded: {ToolName} ({ToolType}) UserId={UserId} DurationMs={Duration}", _toolName, _toolType, _userId, sw.ElapsedMilliseconds);
                 return result;
             }
             catch (Exception ex)
             {
                 Log("Error", input, null, ex.ToString(), (int)sw.ElapsedMilliseconds);
+                _logger?.LogError(ex, "Tool invocation failed: {ToolName} ({ToolType}) UserId={UserId} DurationMs={Duration}", _toolName, _toolType, _userId, sw.ElapsedMilliseconds);
                 throw;
             }
         }
@@ -1025,8 +1129,9 @@ public class DatabaseToolExecutor
                 });
                 _db.SaveChanges();
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogWarning(ex, "Failed to persist tool invocation log for {ToolName}", _toolName);
             }
         }
 

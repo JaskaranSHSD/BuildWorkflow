@@ -38,7 +38,7 @@ public class FileUploadController : ControllerBase
 
         var allowedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".zip"
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".gif"
         };
         long maxSize = DefaultMaxFileSize;
 

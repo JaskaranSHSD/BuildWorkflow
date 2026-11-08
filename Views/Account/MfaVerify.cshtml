@@ -1,8 +1,18 @@
+@using BuildWorkflow.Data
+@inject AppDbContext Db
 @{
     ViewData["Title"] = "MFA Verification";
+    var firstOrg = Db.Organizations.OrderBy(o => o.CreatedAt).FirstOrDefault();
+    var loginBrand = !string.IsNullOrWhiteSpace(firstOrg?.DisplayName) ? firstOrg!.DisplayName : firstOrg?.Name;
+    if (string.IsNullOrWhiteSpace(loginBrand)) loginBrand = "BuildWorkflow";
+    var brandInitial = string.IsNullOrWhiteSpace(loginBrand) ? "B" : loginBrand.Substring(0, 1).ToUpperInvariant();
 }
 <div class="login-shell">
     <div class="login-card">
+        <div class="login-brand">
+            <span class="login-logo">@brandInitial</span>
+            <span class="login-brand-name">@loginBrand</span>
+        </div>
         <h1 class="login-title">Enter MFA code</h1>
         <p class="login-subtitle">Enter the code from your authenticator app.</p>
         @if (TempData["MfaError"] != null)
@@ -15,7 +25,96 @@
                 <label class="form-label login-label" for="code">Code</label>
                 <input type="text" id="code" name="code" class="form-control login-input" autocomplete="one-time-code" required />
             </div>
-            <button type="submit" class="btn btn-primary login-button w-100">Verify</button>
+            <div class="d-flex justify-content-end align-items-center">
+                <button type="submit" class="btn btn-primary login-button">Verify</button>
+            </div>
         </form>
     </div>
 </div>
+
+<style>
+.login-shell {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: #f0f4f9;
+}
+.login-card {
+    width: 100%;
+    max-width: 440px;
+    background: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 28px;
+    padding: 2.75rem 2.5rem 2.25rem;
+    box-shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15);
+}
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: 1.75rem;
+}
+.login-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #1a73e8;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+.login-brand-name {
+    font-size: 1.15rem;
+    font-weight: 500;
+    color: #202124;
+}
+.login-title {
+    font-size: 2.25rem;
+    font-weight: 400;
+    color: #202124;
+    margin-bottom: .25rem;
+    line-height: 1.2;
+}
+.login-subtitle {
+    color: #5f6368;
+    font-size: 1rem;
+    margin-bottom: 2rem;
+}
+.login-label {
+    font-size: .875rem;
+    font-weight: 500;
+    color: #202124;
+    margin-bottom: .35rem;
+}
+.login-input {
+    height: 52px;
+    border-radius: 4px;
+    border: 1px solid #dadce0;
+    padding: .75rem 1rem;
+    font-size: 1rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+.login-input:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 1px #1a73e8;
+    outline: none;
+}
+.login-button {
+    min-width: 96px;
+    height: 40px;
+    border-radius: 4px;
+    font-weight: 500;
+    padding: 0 .95rem;
+    background: #1a73e8;
+    border-color: #1a73e8;
+}
+.login-button:hover {
+    background: #1557b0;
+    border-color: #1557b0;
+}
+</style>

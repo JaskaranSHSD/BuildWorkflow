@@ -1,4 +1,4 @@
-@model List<BuildWorkflow.Models.AiModelDefinition>
+﻿@model List<BuildWorkflow.Models.AiModelDefinition>
 @{
     ViewData["Title"] = "AI Models";
 }
@@ -7,6 +7,23 @@
     <h2 class="mb-0">AI Models</h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModelModal">Add Model</button>
 </div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+        @TempData["Success"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+        @TempData["Error"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
 <form method="get" asp-action="Models" class="mb-3">
     <div class="input-group">
         <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search models by name or description…" />
@@ -100,18 +117,18 @@
                     </div>
                     <div class="mb-2"><textarea name="SystemPrompt" id="edit-model-systemprompt" class="form-control" rows="3"></textarea></div>
                     <div class="form-check mb-2">
-                        <input type="hidden" name="IsActive" value="false" />
                         <input class="form-check-input" type="checkbox" name="IsActive" id="edit-model-isactive" value="true" />
+                        <input type="hidden" name="IsActive" value="false" />
                         <label class="form-check-label" for="edit-model-isactive">Active</label>
                     </div>
                     <div class="form-check mb-2">
-                        <input type="hidden" name="SupportsTools" value="false" />
                         <input class="form-check-input" type="checkbox" name="SupportsTools" id="edit-model-supportstools" value="true" />
+                        <input type="hidden" name="SupportsTools" value="false" />
                         <label class="form-check-label" for="edit-model-supportstools">Supports tools</label>
                     </div>
                     <div class="form-check mb-2">
-                        <input type="hidden" name="SupportsImages" value="false" />
                         <input class="form-check-input" type="checkbox" name="SupportsImages" id="edit-model-supportsimages" value="true" />
+                        <input type="hidden" name="SupportsImages" value="false" />
                         <label class="form-check-label" for="edit-model-supportsimages">Supports images</label>
                     </div>
                 </div>

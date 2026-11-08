@@ -160,12 +160,13 @@
             <input id="image-input" type="file" accept="image/*" class="form-control" style="max-width: 220px; display:none;" />
         @if (chatModels.Count >= 1)
         {
-            <select id="modelSelect" class="form-select form-select-sm" style="max-width: 200px;" title="Model">
+            <select id="modelSelect" class="form-select form-select-sm" style="min-width: 220px; max-width: 260px;" title="Available models (@chatModels.Count)">
                 @foreach (var m in chatModels)
                 {
                     <option value="@m.Id" data-supports-tools="@m.SupportsTools.ToString().ToLowerInvariant()" data-supports-images="@m.SupportsImages.ToString().ToLowerInvariant()">@m.Name</option>
                 }
             </select>
+            <small class="text-muted ms-1">(@chatModels.Count models)</small>
         }
         else if (defaultModel != null)
         {

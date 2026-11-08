@@ -1,4 +1,5 @@
 using BuildWorkflow.Data;
+using BuildWorkflow.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,17 +13,24 @@ public class WorkflowController : Controller
     private readonly AppDbContext _db;
     public WorkflowController(AppDbContext db) { _db = db; }
 
-    public async Task<IActionResult> Manage(Guid id)
+    public async Task<IActionResult> Manage(Guid? id)
     {
+        if (!id.HasValue || id.Value == Guid.Empty)
+        {
+            return RedirectToAction("Index", "Workflow");
+        }
+        var resolvedId = id.Value;
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId)));
-        if (!hasAccess) return NotFound();
+        var manageUser = await _db.Users.FindAsync(userId);
+        if (manageUser == null || !manageUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var isAdmin = (User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin"));
+        var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == resolvedId && (isAdmin || w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == resolvedId && s.UserId == userId)));
+        if (!hasAccess) return NotFound();
 
-        ViewBag.WorkflowId = id;
+        ViewBag.WorkflowId = resolvedId;
         ViewBag.RagBuckets = isAdmin
             ? await _db.RagBuckets.Where(b => b.IsActive).ToListAsync()
-            : await _db.UserRagBuckets.Where(a => a.UserId == userId).Include(a => a.RagBucket).Select(a => a.RagBucket).ToListAsync();
+            : await _db.UserRagBuckets.Where(a => a.UserId == userId).Include(a => a.RagBucket).Where(a => a.RagBucket != null && a.RagBucket.IsActive).Select(a => a.RagBucket).ToListAsync();
         ViewBag.Tools = isAdmin
             ? await _db.Tools.Where(t => t.IsActive).ToListAsync()
             : await _db.UserToolPermissions.Where(a => a.UserId == userId).Include(a => a.Tool).Select(a => a.Tool).ToListAsync();
@@ -40,6 +48,8 @@ public class WorkflowController : Controller
     public async Task<IActionResult> History(Guid id)
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var historyUser = await _db.Users.FindAsync(userId);
+        if (historyUser == null || !historyUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId)));
         if (!hasAccess) return NotFound();
         ViewBag.WorkflowId = id;
@@ -52,6 +62,8 @@ public class WorkflowController : Controller
         if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var schedUser = await _db.Users.FindAsync(userId);
+        if (schedUser == null || !schedUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var isAdmin = (User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin"));
 
         var query = from s in _db.WorkflowSchedules
@@ -86,11 +98,13 @@ public class WorkflowController : Controller
     public async Task<IActionResult> Index()
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var wfUser = await _db.Users.FindAsync(userId);
+        if (wfUser == null || !wfUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var isAdmin = (User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin"));
 
         ViewBag.RagBuckets = isAdmin
             ? await _db.RagBuckets.Where(b => b.IsActive).ToListAsync()
-            : await _db.UserRagBuckets.Where(a => a.UserId == userId).Include(a => a.RagBucket).Select(a => a.RagBucket).ToListAsync();
+            : await _db.UserRagBuckets.Where(a => a.UserId == userId).Include(a => a.RagBucket).Where(a => a.RagBucket != null && a.RagBucket.IsActive).Select(a => a.RagBucket).ToListAsync();
         ViewBag.Tools = isAdmin
             ? await _db.Tools.Where(t => t.IsActive).ToListAsync()
             : await _db.UserToolPermissions.Where(a => a.UserId == userId).Include(a => a.Tool).Select(a => a.Tool).ToListAsync();

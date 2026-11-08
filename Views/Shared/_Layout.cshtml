@@ -56,15 +56,28 @@
     @if (User.Identity?.IsAuthenticated == true)
     {
     <aside class="app-sidebar">
+        @{
+            var _sideUserId = Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var _sid) ? _sid : Guid.Empty;
+            var _sideUser = _sideUserId != Guid.Empty ? Db.Users.Find(_sideUserId) : null;
+            var _sideAdmin = User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin");
+            var _canChat = _sideAdmin || (_sideUser != null && _sideUser.HasModulePermission(BuildWorkflow.Models.UserModulePermission.Chat));
+            var _canWorkflow = _sideAdmin || (_sideUser != null && _sideUser.HasModulePermission(BuildWorkflow.Models.UserModulePermission.WorkflowsRead));
+            var _canRag = _sideAdmin || (_sideUser != null && _sideUser.HasModulePermission(BuildWorkflow.Models.UserModulePermission.RagRead));
+        }
         <nav class="app-nav">
             <a class="nav-link" asp-area="" asp-controller="Home" asp-action="Index"><i class="bi bi-house-door me-2"></i>Home</a>
-            <a class="nav-link" asp-area="" asp-controller="Chat" asp-action="Index"><i class="bi bi-chat-dots me-2"></i>Chat</a>
-            <a class="nav-link" asp-area="" asp-controller="Workflow" asp-action="Index"><i class="bi bi-diagram-3 me-2"></i>Workflow</a>
-            <a class="nav-link" asp-area="" asp-controller="Workflow" asp-action="Scheduled"><i class="bi bi-calendar-event me-2"></i>Scheduled Jobs</a>
-<a class="nav-link" asp-area="" asp-controller="KnowledgeSearch" asp-action="Index"><i class="bi bi-search me-2"></i>Knowledge Search</a>
+            @if (_canChat) { <a class="nav-link" asp-area="" asp-controller="Chat" asp-action="Index"><i class="bi bi-chat-dots me-2"></i>Chat</a> }
+            @if (_canWorkflow) { <a class="nav-link" asp-area="" asp-controller="Workflow" asp-action="Index"><i class="bi bi-diagram-3 me-2"></i>Workflow</a> }
+            @if (_canWorkflow) { <a class="nav-link" asp-area="" asp-controller="Workflow" asp-action="Scheduled"><i class="bi bi-calendar-event me-2"></i>Scheduled Jobs</a> }
+            @if (_canRag) { <a class="nav-link" asp-area="" asp-controller="KnowledgeSearch" asp-action="Index"><i class="bi bi-search me-2"></i>Knowledge Search</a> }
+            <a class="nav-link" asp-area="" asp-controller="Help" asp-action="Index"><i class="bi bi-question-circle me-2"></i>Help</a>
             @if ((User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")))
             {
-                <a class="nav-link" asp-area="" asp-controller="Admin" asp-action="Index"><i class="bi bi-gear me-2"></i>Admin</a>
+                <a class="nav-link" asp-area="" asp-controller="Admin" asp-action="Models"><i class="bi bi-cpu me-2"></i>AI Models</a>
+                <a class="nav-link" asp-area="" asp-controller="Admin" asp-action="Tools"><i class="bi bi-tools me-2"></i>Tools</a>
+                <a class="nav-link" asp-area="" asp-controller="Admin" asp-action="RagBuckets"><i class="bi bi-database me-2"></i>RAG Buckets</a>
+                <a class="nav-link" asp-area="" asp-controller="Ollama" asp-action="Index"><i class="bi bi-rocket-takeoff me-2"></i>Ollama</a>
+                <a class="nav-link" asp-area="" asp-controller="Admin" asp-action="Users"><i class="bi bi-people me-2"></i>Users</a>
                 @if (User.IsInRole("PlatformAdmin"))
                 {
                     <a class="nav-link" asp-area="" asp-controller="PlatformAdmin" asp-action="Index"><i class="bi bi-buildings me-2"></i>Organizations</a>
@@ -104,5 +117,36 @@
         };
     </script>
     @await RenderSectionAsync("Scripts", required: false)
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('input[required], select[required], textarea[required]').forEach(function (el) {
+                var id = el.id;
+                if (!id) return;
+                var label = document.querySelector('label[for="' + id + '"]');
+                if (label && !label.querySelector('.req-star')) {
+                    var star = document.createElement('span');
+                    star.className = 'text-danger req-star';
+                    star.textContent = ' *';
+                    label.appendChild(star);
+                }
+            });
+            document.querySelectorAll('input[type="text"], input[type="search"], input[type="password"], textarea').forEach(function (el) {
+                if (!el.hasAttribute('maxlength')) el.setAttribute('maxlength', '1000');
+            });
+            document.querySelectorAll('input[type="email"]').forEach(function (el) {
+                if (!el.hasAttribute('maxlength')) el.setAttribute('maxlength', '254');
+            });
+            document.querySelectorAll('form').forEach(function (form) {
+                form.addEventListener('submit', function (e) {
+                    var emailOk = true;
+                    form.querySelectorAll('input[type="email"]').forEach(function (el) {
+                        if (el.value && !/^[^\\s@@]+@@[^\\s@@]+\\.[^\\s@@]+$/.test(el.value)) emailOk = false;
+                    });
+                    if (!emailOk) { e.preventDefault(); alert('Please enter a valid email address.'); return false; }
+                    if (!form.checkValidity()) { e.preventDefault(); form.reportValidity(); return false; }
+                });
+            });
+        });
+    </script>
 </body>
 </html>

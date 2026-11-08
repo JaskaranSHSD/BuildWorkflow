@@ -1,0 +1,126 @@
+﻿@{
+    ViewData["Title"] = "Help";
+}
+<div class="container-fluid">
+    <h2>Help &amp; User Guide</h2>
+    <p class="text-muted">This page explains each area of BuildWorkflow in detail.</p>
+
+    <div class="accordion" id="helpAccordion">
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#h1">Home</button></h2>
+            <div id="h1" class="accordion-collapse collapse show" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">Dashboard/landing page after login. Shows navigation and signed-in context. All authenticated users can access it.</div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h2">Chat</button></h2>
+            <div id="h2" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <ul>
+                        <li>Send messages to the configured AI model.</li>
+                        <li>Select tools and RAG buckets from the right sidebar.</li>
+                        <li>Attach files (subject to organization/user file policy).</li>
+                        <li>Resume prior chats from chat history.</li>
+                        <li>Sessions may be limited by <code>Chat:MaxMessagesPerSession</code>.</li>
+                        <li>Generated export files appear as downloadable <code>file:</code> tokens.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h3">Workflows</button></h2>
+            <div id="h3" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <p>Create and run multi-step AI workflows with instructions, models, tools, RAG buckets, and files.</p>
+                    <ul>
+                        <li>Add/edit/reorder/delete steps.</li>
+                        <li>Run workflows manually and view run history.</li>
+                        <li>Share run-only access with other users.</li>
+                        <li>Generated files appear in run messages as download links.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h4">Scheduled Jobs</button></h2>
+            <div id="h4" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <p>Schedule workflows to run automatically.</p>
+                    <ul>
+                        <li>One-time or recurring schedules (interval, daily, weekly, monthly, yearly).</li>
+                        <li>Timezone-aware execution.</li>
+                        <li>View next run times and history.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h5">Knowledge Search</button></h2>
+            <div id="h5" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">Search indexed content across allowed RAG buckets.</div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h6">Administration</button></h2>
+            <div id="h6" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <ul>
+                        <li><strong>AI Models:</strong> configure provider, endpoint, model name, prompt, tool/image support.</li>
+                        <li><strong>Tools:</strong> configure API, SQL, SFTP, file, Excel, export, MCP, workflow manager, and Knowledge Memory tools.</li>
+                        <li><strong>RAG Buckets:</strong> create buckets and manage documents/chunks.</li>
+                        <li><strong>Users:</strong> manage users, roles, permissions, MFA, file policies, and tool/bucket assignments.</li>
+                    </ul>
+                    <p>PlatformAdmin also manages organizations and system cleanup.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h7">Knowledge Memory Tool</button></h2>
+            <div id="h7" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <p>A configurable <code>KnowledgeMemory</code>/<code>UserKnowledge</code> AI tool. When assigned/selected, the AI can store durable notes (preferences, decisions, contacts, project details) into a per-user RAG bucket.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h8">Ollama Management</button></h2>
+            <div id="h8" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <p>Admin page for listing, pulling, and deleting Ollama models. The endpoint can be changed at runtime.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h9">System Reset</button></h2>
+            <div id="h9" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <p>Platform admin can reset all application data except the platform admin and default organization. Requires the reset password in <code>appsettings.json</code>.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h10">Permissions</button></h2>
+            <div id="h10" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">
+                    <p>Module permissions are granted per user: Chat; Workflows (read/write); AI Models (read/write); Tools (read/write); RAG (read/write). Write implies read. Ungranted modules are inaccessible.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#h11">Account</button></h2>
+            <div id="h11" class="accordion-collapse collapse" data-bs-parent="#helpAccordion">
+                <div class="accordion-body">Profile, password change, MFA verification, and logout.</div>
+            </div>
+        </div>
+    </div>
+</div>

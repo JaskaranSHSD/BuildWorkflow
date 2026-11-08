@@ -47,11 +47,11 @@ Update `appsettings.json`:
 
 The application creates/updates the PostgreSQL schema through `EnsureCreated()` at startup. On first run with no users, it seeds:
 
-- Username: `admin`
-- Password: `admin`
-- Role: `Admin`
+- Username: `platformadmin`
+- Password: `PlatformAdmin@2025!`
+- Role: `PlatformAdmin`
 
-Passwords are currently stored as plaintext by intentional current design.
+Passwords are stored as BCrypt hashes via `PasswordHasher`. The platform admin account is created automatically on first run of an empty database.
 
 ## Run Locally
 
@@ -106,6 +106,9 @@ Open `http://localhost:5199`, then sign in with `admin/admin`.
 - **RAG scalability improvements**: configurable chunk scan limits, bounded parallel embeddings, reusable HTTP clients, database indexes, and cleanup of orphaned chunks/documents.
 - **Pagination**: admin lists (models, tools, users, RAG buckets), chat history, and workflow runs use 50 records per page by default, except chat history uses 10.
 - **Chat limits**: configurable `Chat:MaxMessagesPerSession` (default 50); opening or continuing an over-limit chat asks the user to start a new chat.
+- **Knowledge Memory tool** (configurable): an AI tool type `KnowledgeMemory`/`UserKnowledge` that stores durable notes into a per-user RAG bucket when explicitly assigned/selected.
+- **Ollama management**: admin page for listing, pulling, and deleting Ollama models with a configurable runtime endpoint.
+- **System reset**: platform admin can reset all data except the platform admin and default organization using a password from `appsettings.json`.
 
 ## Development Notes
 - The workflow runner is a `BackgroundService` plus `WorkflowRunQueue`.

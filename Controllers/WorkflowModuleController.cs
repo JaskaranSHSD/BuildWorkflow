@@ -29,8 +29,12 @@ public class WorkflowModuleController : ControllerBase
         pageSize = pageSize < 1 || pageSize > 100 ? 10 : pageSize;
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var query = _db.Workflows
-            .Where(w => w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == w.Id && s.UserId == userId.Value));
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var isAdmin = User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin");
+        var query = isAdmin
+            ? _db.Workflows
+            : _db.Workflows.Where(w => (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == w.Id && s.UserId == userId.Value));
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = search.Trim().ToLower();
@@ -60,7 +64,7 @@ public class WorkflowModuleController : ControllerBase
                 fileCount = fileNames.Count,
                 fileNames,
                 runCount = _db.WorkflowRuns.Count(r => r.WorkflowId == w.Id),
-                isOwner = w.UserId == userId,
+                isOwner = (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")),
                 updatedAt = w.UpdatedAt
             });
         }
@@ -72,6 +76,8 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         if (string.IsNullOrWhiteSpace(req.Name)) return BadRequest(new { error = "Name required." });
         var wf = new WorkflowDefinition
         {
@@ -93,7 +99,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && ((w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
         if (wf == null) return NotFound();
         return Ok(new
         {
@@ -118,7 +126,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (wf == null) return NotFound();
         if (!string.IsNullOrWhiteSpace(req.Name)) wf.Name = req.Name.Trim();
         if (req.Description != null) wf.Description = req.Description;
@@ -153,7 +163,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var wf = await _db.Workflows.FirstOrDefaultAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (wf == null) return NotFound();
         _db.Workflows.Remove(wf);
         await _db.SaveChangesAsync(ct);
@@ -165,7 +177,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!exists) return NotFound();
         var ownsFile = await _db.UploadedFiles.AnyAsync(f => f.Id == fileId && (f.UserId == userId || f.UserId == null), ct);
         if (!ownsFile) return Forbid();
@@ -180,7 +194,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!exists) return NotFound();
         var existing = await _db.WorkflowRagBuckets.Where(b => b.WorkflowId == id).ToListAsync(ct);
         _db.WorkflowRagBuckets.RemoveRange(existing);
@@ -195,7 +211,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && ((w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
         if (!exists) return NotFound();
 
         var run = new WorkflowRun { WorkflowId = id, UserId = userId, Status = "Queued" };
@@ -210,7 +228,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var owns = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var owns = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!owns) return NotFound();
 
         var runIds = await _db.WorkflowRuns.Where(r => r.WorkflowId == id).Select(r => r.Id).ToListAsync(ct);
@@ -231,7 +251,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == id && ((w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
         if (!hasAccess) return NotFound();
 
         page = page < 1 ? 1 : page;
@@ -251,11 +273,13 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var run = await _db.WorkflowRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
         if (run == null) return NotFound();
         if (run.WorkflowId != Guid.Empty)
         {
-            var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == run.WorkflowId && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == run.WorkflowId && s.UserId == userId.Value)), ct);
+            var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == run.WorkflowId && ((w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == run.WorkflowId && s.UserId == userId.Value)), ct);
             if (!hasAccess) return NotFound();
         }
         if (run.WorkflowSessionId == null) return Ok(Array.Empty<object>());
@@ -271,11 +295,13 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var run = await _db.WorkflowRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
         if (run == null) return NotFound();
         if (run.WorkflowId != Guid.Empty)
         {
-            var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == run.WorkflowId && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == run.WorkflowId && s.UserId == userId.Value)), ct);
+            var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == run.WorkflowId && ((w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == run.WorkflowId && s.UserId == userId.Value)), ct);
             if (!hasAccess) return NotFound();
         }
         var steps = await _db.WorkflowRunSteps
@@ -300,7 +326,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var exists = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!exists) return NotFound();
         var existing = await _db.WorkflowSchedules.Where(s => s.WorkflowId == id).ToListAsync(ct);
         foreach (var old in existing) old.Enabled = false;
@@ -345,6 +373,8 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var list = await _db.WorkflowSchedules.Where(s => s.WorkflowId == id)
             .Select(s => new { s.Id, s.Enabled, s.IntervalMinutes, s.RunAt, s.NextRunAt, s.LastRunAt, s.ScheduleType, s.DaysOfWeek, s.DayOfMonth, s.WeekOfMonth, s.DayOfWeek, s.Hour, s.Minute, s.TimeZoneId, s.EndAt })
             .ToListAsync(ct);
@@ -369,7 +399,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var shares = await _db.WorkflowShares
             .Where(s => s.WorkflowId == id)
@@ -383,8 +415,10 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
 
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         if (!await _db.Users.AnyAsync(u => u.Id == req.UserId, ct)) return NotFound();
         var exists = await _db.WorkflowShares.AnyAsync(s => s.WorkflowId == id && s.UserId == req.UserId, ct);
@@ -401,7 +435,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var share = await _db.WorkflowShares.FirstOrDefaultAsync(s => s.Id == shareId && s.WorkflowId == id, ct);
         if (share != null)
@@ -419,9 +455,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var schedule = await _db.WorkflowSchedules.FirstOrDefaultAsync(s => s.Id == scheduleId, ct);
         if (schedule == null) return NotFound();
-        var owns = await _db.Workflows.AnyAsync(w => w.Id == schedule.WorkflowId && w.UserId == userId, ct);
+        var owns = await _db.Workflows.AnyAsync(w => w.Id == schedule.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!owns) return Forbid();
         _db.WorkflowSchedules.Remove(schedule);
         await _db.SaveChangesAsync(ct);
@@ -433,9 +471,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var schedule = await _db.WorkflowSchedules.FirstOrDefaultAsync(s => s.Id == scheduleId, ct);
         if (schedule == null) return NotFound();
-        var owns = await _db.Workflows.AnyAsync(w => w.Id == schedule.WorkflowId && w.UserId == userId, ct);
+        var owns = await _db.Workflows.AnyAsync(w => w.Id == schedule.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!owns) return Forbid();
 
         schedule.ScheduleType = string.IsNullOrWhiteSpace(req.ScheduleType) ? schedule.ScheduleType : req.ScheduleType!;
@@ -463,7 +503,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var hasAccess = await _db.Workflows.AnyAsync(w => w.Id == id && ((w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")) || _db.WorkflowShares.Any(s => s.WorkflowId == id && s.UserId == userId.Value)), ct);
         if (!hasAccess) return NotFound();
         var steps = await _db.WorkflowSteps.Where(s => s.WorkflowId == id).OrderBy(s => s.Order).ThenBy(s => s.CreatedAt).ToListAsync(ct);
         var result = new List<object>();
@@ -490,7 +532,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var nextOrder = (await _db.WorkflowSteps.Where(s => s.WorkflowId == id).MaxAsync(s => (int?)s.Order, ct) ?? 0) + 1;
         var step = new WorkflowStep
@@ -512,9 +556,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var step = await _db.WorkflowSteps.FirstOrDefaultAsync(s => s.Id == stepId, ct);
         if (step == null) return NotFound();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         if (!string.IsNullOrWhiteSpace(req.Name)) step.Name = req.Name.Trim();
         step.UserInstruction = req.UserInstruction;
@@ -531,9 +577,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var step = await _db.WorkflowSteps.FirstOrDefaultAsync(s => s.Id == stepId, ct);
         if (step == null) return NotFound();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         _db.WorkflowSteps.Remove(step);
         await _db.SaveChangesAsync(ct);
@@ -545,7 +593,9 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && w.UserId == userId, ct);
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == id && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         for (var i = 0; i < stepIds.Length; i++)
         {
@@ -561,9 +611,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var step = await _db.WorkflowSteps.FirstOrDefaultAsync(s => s.Id == stepId, ct);
         if (step == null) return NotFound();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var existing = await _db.WorkflowStepTools.Where(t => t.WorkflowStepId == stepId).ToListAsync(ct);
         _db.WorkflowStepTools.RemoveRange(existing);
@@ -577,9 +629,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var step = await _db.WorkflowSteps.FirstOrDefaultAsync(s => s.Id == stepId, ct);
         if (step == null) return NotFound();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var existing = await _db.WorkflowStepRagBuckets.Where(b => b.WorkflowStepId == stepId).ToListAsync(ct);
         _db.WorkflowStepRagBuckets.RemoveRange(existing);
@@ -593,9 +647,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var step = await _db.WorkflowSteps.FirstOrDefaultAsync(s => s.Id == stepId, ct);
         if (step == null) return NotFound();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var ownsFile = await _db.UploadedFiles.AnyAsync(f => f.Id == fileId && (f.UserId == userId || f.UserId == null), ct);
         if (!ownsFile) return Forbid();
@@ -610,9 +666,11 @@ public class WorkflowModuleController : ControllerBase
     {
         var userId = ParseUserId();
         if (!userId.HasValue) return Unauthorized();
+        var wfPermUser = await _db.Users.FindAsync(userId.Value);
+        if (wfPermUser == null || !wfPermUser.HasModulePermission(UserModulePermission.WorkflowsRead)) return Forbid();
         var step = await _db.WorkflowSteps.FirstOrDefaultAsync(s => s.Id == stepId, ct);
         if (step == null) return NotFound();
-        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && w.UserId == userId, ct);
+        var isOwner = await _db.Workflows.AnyAsync(w => w.Id == step.WorkflowId && (w.UserId == userId || User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin")), ct);
         if (!isOwner) return Forbid();
         var existing = await _db.WorkflowStepFiles.Where(f => f.WorkflowStepId == stepId).ToListAsync(ct);
         _db.WorkflowStepFiles.RemoveRange(existing);

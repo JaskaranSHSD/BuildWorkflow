@@ -146,17 +146,51 @@ public class WorkflowExecutionService
                     ragBucketIds.AddRange(await db.WorkflowStepRagBuckets.Where(b => b.WorkflowStepId == step.Id).Select(b => b.RagBucketId).ToListAsync(cancellationToken));
                     ragBucketIds = ragBucketIds.Where(id => id != Guid.Empty).Distinct().ToList();
 
+                    // Only buckets allowed to the run user (and still active) may be used.
+                    var allowedBucketIds = new HashSet<Guid>();
+                    if (run.UserId.HasValue)
+                    {
+                        var runUser = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == run.UserId.Value, cancellationToken);
+                        var isAdmin = runUser != null && (runUser.Role == "Admin" || runUser.Role == "OrgAdmin" || runUser.Role == "PlatformAdmin");
+                        if (isAdmin)
+                        {
+                            var ids = await db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken);
+                            foreach (var id in ids) allowedBucketIds.Add(id);
+                        }
+                        else
+                        {
+                            var ids = await db.UserRagBuckets
+                                .Where(a => a.UserId == run.UserId.Value)
+                                .Include(a => a.RagBucket)
+                                .Where(a => a.RagBucket != null && a.RagBucket.IsActive)
+                                .Select(a => a.RagBucketId)
+                                .ToListAsync(cancellationToken);
+                            foreach (var id in ids) allowedBucketIds.Add(id);
+                        }
+                    }
+                    else
+                    {
+                        var ids = await db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken);
+                        foreach (var id in ids) allowedBucketIds.Add(id);
+                    }
+
                     if (ragBucketIds.Count == 0)
                     {
                         if (run.UserId.HasValue)
                         {
-                            ragBucketIds = await db.UserRagBuckets.Where(x => x.UserId == run.UserId.Value).Select(x => x.RagBucketId).ToListAsync(cancellationToken);
-                            if (ragBucketIds.Count == 0)
-                                ragBucketIds = await db.RagBuckets.Where(x => x.IsActive).Select(x => x.Id).ToListAsync(cancellationToken);
+                            ragBucketIds = allowedBucketIds.ToList();
                         }
                         else
-                            ragBucketIds = await db.RagBuckets.Where(x => x.IsActive).Select(x => x.Id).ToListAsync(cancellationToken);
+                        {
+                            ragBucketIds = allowedBucketIds.ToList();
+                        }
                     }
+                    else
+                    {
+                        ragBucketIds = ragBucketIds.Where(id => allowedBucketIds.Contains(id)).Distinct().ToList();
+                    }
+
+                    if (ragBucketIds.Count == 0) ragBucketIds = new List<Guid>();
 
                     var endpoint = configuration["Ollama:Endpoint"] ?? "http://localhost:11434";
                     string? embeddingModel = null;

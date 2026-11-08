@@ -26,6 +26,10 @@ This document is the AI-facing source of truth for the `BuildWorkflow` .NET web 
 - Chat sessions are limited by `Chat:MaxMessagesPerSession` (default 50); over-limit sessions ask the user to start a new chat.
 - Auth/security: password complexity rules, optional forced password change, soft-delete users, multi-factor authentication (platform fixed 4-digit code; other users authenticator-app TOTP with admin-shared QR codes).
 - Branding: organization display name can override the topbar/login brand, with BuildWorkflow fallback.
+- Auth/seed: app now auto-creates only a `platformadmin` / `PlatformAdmin@2025!` platform admin and default organization.
+- Memory tool: configurable `KnowledgeMemory`/`UserKnowledge` AI tool for storing durable notes into a per-user RAG bucket.
+- Ollama management page and runtime endpoint configuration for listing/pulling/deleting models.
+- System reset: platform admin can reset all application data except the platform admin and default organization using a configured password.
 - Layout: sticky topbar, single logo, sidebar under topbar.
 - Organization/user file policy: allowed extensions and max upload size per organization, user-level subsets, backend and client-side enforcement, upload controls disabled when no types are allowed.
 - Chat selection UI: group buttons with selected/total counts and modal panels for tools/knowledge.

@@ -1,4 +1,5 @@
 using BuildWorkflow.Data;
+using BuildWorkflow.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,8 +20,12 @@ public class ChatController : Controller
     public async Task<IActionResult> Index()
     {
         var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var dbUser = await _db.Users.FindAsync(userId);
+        if (dbUser == null || !dbUser.HasModulePermission(UserModulePermission.Chat))
+        {
+            return Forbid();
+        }
         var isAdmin = (User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin"));
-
         ViewBag.RagBuckets = isAdmin
             ? await _db.RagBuckets.Where(b => b.IsActive).Include(b => b.KnowledgeGroup).OrderBy(b => b.Name).ToListAsync()
             : await _db.UserRagBuckets
@@ -51,9 +56,10 @@ public class ChatController : Controller
             .OrderBy(m => m.Name)
             .ToListAsync();
 
-        ViewBag.Models = assignedModels.Count > 0
-            ? assignedModels
-            : (isAdmin ? await _db.AiModels.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync() : assignedModels);
+        var _chatModels = isAdmin
+            ? await _db.AiModels.Where(m => m.IsActive).OrderBy(m => m.Name).ToListAsync()
+            : assignedModels;
+        ViewBag.Models = _chatModels;
 
         var chatUser = await _db.Users.Include(u => u.Organization).FirstOrDefaultAsync(u => u.Id == userId);
         string? userAllowed = chatUser?.AllowedFileExtensions;

@@ -1,4 +1,4 @@
-@model BuildWorkflow.Models.AppUser
+﻿@model BuildWorkflow.Models.AppUser
 @{
     ViewData["Title"] = "Manage User";
     var tools = ViewBag.Tools as List<BuildWorkflow.Models.ToolDefinition> ?? new();
@@ -20,17 +20,21 @@
 
 <h2>Manage User: @Model.Username</h2>
 
-@if (organization != null)
-{
-    <div class="card p-3 mb-3">
-        <h5>Organization File Policy</h5>
-        <div><strong>Organization:</strong> @organization.Name</div>
-        <div><strong>Allowed file types:</strong> @(string.IsNullOrWhiteSpace(organization.AllowedFileExtensions) ? "All supported types" : organization.AllowedFileExtensions)</div>
-        <div><strong>Maximum file size:</strong> @organization.MaxUploadSizeBytes bytes</div>
-    </div>
-}
-<div class="card p-3 mb-3">
-    <h5>MFA</h5>
+<div class="row g-3 mb-3">
+    @if (organization != null)
+    {
+        <div class="col-md-6">
+            <div class="card p-3 h-100">
+                <h5>Organization File Policy</h5>
+                <div><strong>Organization:</strong> @organization.Name</div>
+                <div><strong>Allowed file types:</strong> @(string.IsNullOrWhiteSpace(organization.AllowedFileExtensions) ? "All supported types" : organization.AllowedFileExtensions)</div>
+                <div><strong>Maximum file size:</strong> @organization.MaxUploadSizeBytes bytes</div>
+            </div>
+        </div>
+    }
+    <div class="col-md-6">
+        <div class="card p-3 h-100">
+            <h5>MFA</h5>
     @if (Model.Role == "PlatformAdmin" || string.Equals(Model.Role, "PlatformAdmin", StringComparison.OrdinalIgnoreCase))
     {
         <p class="mb-1">Platform user fixed MFA code: <strong>@mfaPlatformCode</strong></p>
@@ -38,10 +42,15 @@
     }
     else
     {
-        <p class="mb-1">Authenticator secret: <code>@mfaSecret</code></p>
+        <p class="mb-1">
+            Authenticator secret:
+            <code id="mfa-secret-display" style="display:none;">@mfaSecret</code>
+            <span id="mfa-secret-masked">••••••••••••••••</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="toggle-mfa-secret" onclick="toggleMfaSecret()">Show Secret</button>
+        </p>
         <div id="mfa-qr" class="mb-2"></div>
-        <small class="text-muted">Share this barcode or secret with the user.</small>
-        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+        <small class="text-muted">Share this barcode or secret with the user. Click "Show Secret" to reveal the TOTP secret.</small>
+        <script src="~/lib/qrcodejs/qrcode.min.js" asp-append-version="true"></script>
         <script>
             document.addEventListener('DOMContentLoaded', function () {
                 var box = document.getElementById('mfa-qr');
@@ -49,8 +58,24 @@
                     new QRCode(box, { text: '@mfaOtpAuthUri', width: 180, height: 180 });
                 }
             });
+            function toggleMfaSecret() {
+                var display = document.getElementById('mfa-secret-display');
+                var masked = document.getElementById('mfa-secret-masked');
+                var btn = document.getElementById('toggle-mfa-secret');
+                if (display.style.display === 'none') {
+                    display.style.display = 'inline';
+                    masked.style.display = 'none';
+                    btn.textContent = 'Hide Secret';
+                } else {
+                    display.style.display = 'none';
+                    masked.style.display = 'inline';
+                    btn.textContent = 'Show Secret';
+                }
+            }
         </script>
     }
+    </div>
+</div>
 </div>
 <div class="card p-3 mb-3">
     <h5>Update user</h5>
@@ -62,9 +87,9 @@
     }
     <form asp-action="UpdateUser" method="post" class="row g-2">
         <input type="hidden" name="id" value="@Model.Id" />
-        <div class="col-md-3"><input name="username" class="form-control" value="@Model.Username" placeholder="Username" /></div>
-        <div class="col-md-3"><input name="fullName" class="form-control" value="@Model.FullName" placeholder="Full name" /></div>
-        <div class="col-md-3"><input name="email" class="form-control" value="@Model.Email" placeholder="Email" /></div>
+        <div class="col-md-3"><input name="username" class="form-control" value="@Model.Username" placeholder="Username" required maxlength="100" /></div>
+        <div class="col-md-3"><input name="fullName" class="form-control" value="@Model.FullName" placeholder="Full name" maxlength="100" /></div>
+        <div class="col-md-3"><input name="email" type="email" class="form-control" value="@Model.Email" placeholder="Email" maxlength="254" /></div>
         <div class="col-md-3"><input name="password" class="form-control" placeholder="New password (leave blank to keep)" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="Password must be at least 8 characters and include uppercase, lowercase, number, and special character." /></div>
         <div class="col-md-2">
             <select name="role" class="form-select">
@@ -101,52 +126,64 @@
             </div>
             <div class="form-text">Uncheck all to disable file uploads for this user.</div>
         </div>
+        <div class="col-12 mt-2">
+            <label class="form-label">Module permissions</label>
+            <div class="row">
+                @{
+                    var permOptions = new (UserModulePermission Bit, string Label)[] {
+                        (UserModulePermission.Chat, "Chat"),
+                        (UserModulePermission.WorkflowsRead, "Workflows Read"),
+                        (UserModulePermission.WorkflowsWrite, "Workflows Write"),
+                        (UserModulePermission.AiModelsRead, "AI Models Read"),
+                        (UserModulePermission.AiModelsWrite, "AI Models Write"),
+                        (UserModulePermission.ToolsRead, "Tools Read"),
+                        (UserModulePermission.ToolsWrite, "Tools Write"),
+                        (UserModulePermission.RagRead, "RAG Read"),
+                        (UserModulePermission.RagWrite, "RAG Write")
+                    };
+                    var granted = (UserModulePermission)Model.Permissions;
+                }
+                @foreach (var (bit, label) in permOptions)
+                {
+                    var isChecked = Model.IsAdmin || granted.HasFlag(bit) || (bit == UserModulePermission.WorkflowsRead && granted.HasFlag(UserModulePermission.WorkflowsWrite)) || (bit == UserModulePermission.AiModelsRead && granted.HasFlag(UserModulePermission.AiModelsWrite)) || (bit == UserModulePermission.ToolsRead && granted.HasFlag(UserModulePermission.ToolsWrite)) || (bit == UserModulePermission.RagRead && granted.HasFlag(UserModulePermission.RagWrite));
+                    <div class="col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="permissions" value="@((long)bit)" id="perm-@bit" @(isChecked ? "checked" : "") @(Model.IsAdmin ? "disabled" : "") />
+                            <label class="form-check-label small" for="perm-@bit">@label</label>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="form-text">Read-only means viewing/listing without creating, editing, deleting, assigning, or running. Write includes read.</div>
+        </div>
         <div class="col-md-1"><button class="btn btn-primary w-100">Save</button></div>
     </form>
 </div>
 
-<div class="card p-3 mb-3">
-    <h5>Assigned models</h5>
-    @if (assignedModels.Any())
-    {
-        <ul class="list-group mb-3">
-            @foreach (var a in assignedModels)
-            {
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    @a.AiModel.Name
-                    <form asp-action="UnassignUserModel" method="post" class="d-inline">
-                        <input type="hidden" name="id" value="@a.Id" />
-                        <input type="hidden" name="userId" value="@Model.Id" />
-                        <button class="btn btn-sm btn-danger">Remove</button>
-                    </form>
-                </li>
-            }
-        </ul>
-    }
-    else
-    {
-        <p class="text-muted">No models assigned.</p>
-    }
-
-    <form asp-action="AssignUserModel" method="post" class="d-flex gap-2">
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card p-3 h-100">
+            <h5>Assigned models</h5>
+    <form asp-action="AssignUserModel" method="post" class="mt-2">
         <input type="hidden" name="userId" value="@Model.Id" />
-        <select name="modelId" class="form-select">
-            <option value="">Select model to add</option>
-            @foreach (var m in models.Where(m => !assignedModelIds.Contains(m.Id)))
-            {
-                <option value="@m.Id">@m.Name</option>
-            }
-        </select>
-        <button class="btn btn-primary">Assign</button>
+        <input type="search" class="form-control form-control-sm mb-2" placeholder="Search..." oninput="filterAssign(this)" />
+        @foreach (var m in models)
+        {
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="modelIds" value="@m.Id" id="assign-model-@m.Id" checked="@(assignedModelIds.Contains(m.Id))" />
+                <label class="form-check-label small" for="assign-model-@m.Id">@m.Name</label>
+            </div>
+        }
+        <button class="btn btn-primary btn-sm mt-2">Assign Selected</button>
     </form>
-</div>
-
-<div class="row">
-    <div class="col-md-6">
+        </div>
+    </div>
+    <div class="col-md-4">
         <div class="card p-3 mb-3">
             <h5>Assigned tools</h5>
             <form asp-action="AssignUserTool" method="post" class="mt-2">
                 <input type="hidden" name="userId" value="@Model.Id" />
+                    <input type="search" class="form-control form-control-sm mb-2" placeholder="Search..." oninput="filterAssign(this)" />
                 @{
                     var toolGroupsView = tools
                         .GroupBy(t => string.IsNullOrWhiteSpace(t.ToolGroup?.Name) ? "General" : t.ToolGroup!.Name)
@@ -171,11 +208,12 @@
             </form>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-4">
         <div class="card p-3 mb-3">
             <h5>Assigned RAG buckets</h5>
             <form asp-action="AssignUserBucket" method="post" class="mt-2">
                 <input type="hidden" name="userId" value="@Model.Id" />
+                    <input type="search" class="form-control form-control-sm mb-2" placeholder="Search..." oninput="filterAssign(this)" />
                 @{
                     var bucketGroupsView = buckets
                         .GroupBy(b => string.IsNullOrWhiteSpace(b.KnowledgeGroup?.Name) ? "General" : b.KnowledgeGroup!.Name)
@@ -203,3 +241,14 @@
 </div>
 
 <a asp-action="Users" class="btn btn-secondary">Back to users</a>
+<script>
+function filterAssign(input) {
+    const term = (input.value || '').toLowerCase().trim();
+    const form = input.closest('form');
+    if (!form) return;
+    form.querySelectorAll('.form-check').forEach(div => {
+        const text = (div.textContent || '').toLowerCase();
+        div.style.display = (!term || text.includes(term)) ? '' : 'none';
+    });
+}
+</script>

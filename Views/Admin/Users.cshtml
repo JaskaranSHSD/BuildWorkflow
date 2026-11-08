@@ -23,10 +23,10 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-2"><input name="Username" class="form-control" placeholder="Username" /></div>
-                    <div class="mb-2"><input name="FullName" class="form-control" placeholder="Full name" /></div>
-                    <div class="mb-2"><input name="Email" class="form-control" placeholder="Email" /></div>
-                    <div class="mb-2"><input name="Password" class="form-control" placeholder="Password" required pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="Password must be at least 8 characters and include uppercase, lowercase, number, and special character." /></div>
+                    <div class="mb-2"><input name="Username" class="form-control" placeholder="Username" required maxlength="100" /></div>
+                    <div class="mb-2"><input name="FullName" class="form-control" placeholder="Full name" maxlength="100" /></div>
+                    <div class="mb-2"><input name="Email" type="email" class="form-control" placeholder="Email" required maxlength="254" /></div>
+                    <div class="mb-2"><input name="Password" class="form-control" placeholder="Password" required pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="Password must be at least 8 characters and include uppercase, lowercase, number, and special character." maxlength="128" /></div>
                     <div class="mb-2">
                         <select name="Role" class="form-select">
                             <option value="User">User</option>

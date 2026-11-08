@@ -82,7 +82,7 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.Username).IsUnique();
             entity.HasIndex(e => e.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL");
             entity.Property(e => e.Username).HasMaxLength(128).IsRequired();
-            entity.Property(e => e.Password).HasMaxLength(512).IsRequired();
+            entity.Property(e => e.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(e => e.Role).HasMaxLength(32).IsRequired();
         });
 

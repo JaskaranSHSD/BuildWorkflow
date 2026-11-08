@@ -240,7 +240,8 @@ public class AICenterService
         var allFileIds = attachedIds.Concat(historicalFileIds).Distinct().ToList();
         if (userId.HasValue && allFileIds.Count > 0 && !allowedTools.Any(t => t.Name == "read_attached_file"))
         {
-            allowedTools.Add(_toolExecutor.CreateAttachedFileTool(userId.Value, allFileIds));
+            var attachedFileTool = _toolExecutor.CreateAttachedFileTool(userId.Value, allFileIds);
+            allowedTools.Add(_toolExecutor.WrapTool(attachedFileTool, userId.Value, "read_attached_file", "FileReader"));
         }
 
         var modelMessage = cleanMessage + tokenInstruction;

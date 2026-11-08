@@ -1,5 +1,8 @@
 namespace BuildWorkflow.Models;
 
+using System.ComponentModel.DataAnnotations.Schema;
+using BuildWorkflow.Services;
+
 public class AppUser
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -10,7 +13,14 @@ public class AppUser
 
     public string? Email { get; set; }
 
-    public string Password { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+
+    [NotMapped]
+    public string Password
+    {
+        get => string.Empty;
+        set => PasswordHash = string.IsNullOrWhiteSpace(value) ? string.Empty : PasswordHasher.Hash(value);
+    }
 
     public string Role { get; set; } = "User";
 
@@ -37,6 +47,8 @@ public class AppUser
     public string? MfaSecret { get; set; }
 
     public bool MfaEnabled { get; set; } = true;
+
+    public long Permissions { get; set; } = 0;
 
     public bool IsAdmin => Role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
         || Role.Equals("OrgAdmin", StringComparison.OrdinalIgnoreCase)

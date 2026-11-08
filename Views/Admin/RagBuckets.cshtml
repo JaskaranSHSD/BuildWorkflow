@@ -1,4 +1,4 @@
-@model List<BuildWorkflow.Models.RagBucket>
+﻿@model List<BuildWorkflow.Models.RagBucket>
 @using BuildWorkflow.Data
 @inject AppDbContext Db
 @{
@@ -62,8 +62,14 @@
     </div>
 </div>
 
-<table class="table">
-    <thead><tr><th>Name</th><th>Description</th><th>Group</th><th>Active</th><th></th></tr></thead>
+<form method="get" asp-action="RagBuckets" class="mb-3">
+    <div class="input-group">
+        <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search buckets by name or description�" />
+        <button class="btn btn-outline-secondary" type="submit">Search</button>
+    </div>
+</form>
+    <table class="table">
+    <thead><tr><th>Name</th><th>Description</th><th>Group</th><th>Embedding Model</th><th>Active</th><th></th></tr></thead>
     <tbody>
     @foreach (var item in Model)
     {
@@ -73,7 +79,7 @@
             <td>@(item.KnowledgeGroup?.Name ?? "General")</td>
             <td>@item.IsActive</td>
             <td>
-                <button type="button" class="btn btn-sm btn-outline-success border border-success me-1" onclick="openBucketKnowledge('@item.Id','@item.Name')">Manage Knowledge</button>
+                <button type="button" class="btn btn-sm btn-outline-success border border-success me-1" onclick="openBucketKnowledge('@item.Id','@item.Name','@(Db.AiModels.FirstOrDefault(m => m.Id == item.EmbeddingModelId)?.Name ?? "Plain text search (no embeddings)")')">Manage Knowledge</button>
                 <form asp-action="DeleteRagBucket" method="post" class="d-inline">
                     <input type="hidden" name="id" value="@item.Id" />
                     <button class="btn btn-sm btn-danger">Delete</button>
@@ -84,12 +90,6 @@
     </tbody>
 </table>
 
-<form method="get" asp-action="RagBuckets" class="mb-3">
-    <div class="input-group">
-        <input type="search" name="search" value="@ViewBag.Search" class="form-control" placeholder="Search buckets by name or description…" />
-        <button class="btn btn-outline-secondary" type="submit">Search</button>
-    </div>
-</form>
 <p class="small text-muted mb-2">Total records: @(ViewBag.TotalCount ?? 0)</p>
 @if ((int)(ViewBag.TotalPages ?? 1) > 1)
 {
@@ -117,6 +117,7 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" name="bucketId" id="bucketKnowledgeId" />
+                    <div class="small text-muted mb-2">Embedding model: <strong id="bucketKnowledgeModel"></strong></div>
                     <div class="row g-2 mb-3">
                         <div class="col-md-8"><input type="file" name="file" class="form-control" accept=".txt,.csv,.md,.pdf,.xlsx,.xls,.docx" /></div>
                         <div class="col-md-4"><button class="btn btn-primary w-100">Upload Knowledge</button></div>
@@ -139,7 +140,7 @@ const bucketDocuments = [
     @:{ id: '@d.Id', bucketId: '@d.RagBucketId', fileName: '@safeName', createdAt: '@d.CreatedAt.ToString("yyyy-MM-dd HH:mm")' },
 }
 ];
-function openBucketKnowledge(bucketId, name) {
+function openBucketKnowledge(bucketId, name, embeddingModel) {
     document.getElementById('bucketKnowledgeId').value = bucketId;
     document.getElementById('bucketKnowledgeName').textContent = name;
     const container = document.getElementById('bucketKnowledgeDocs');

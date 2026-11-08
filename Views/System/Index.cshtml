@@ -6,6 +6,18 @@
 {
     <div class="alert alert-success">@TempData["Message"]</div>
 }
+<div class="card p-3 mb-3 border-danger">
+    <h5 class="text-danger">Reset Application</h5>
+    <p class="text-muted small mb-2">Deletes all application data except the platform admin and default organization. Enter the configured reset password.</p>
+    <form asp-controller="System" asp-action="ResetAll" method="post" onsubmit="return confirm('This will delete all application data except the platform admin/default organization. Continue?');">
+        @Html.AntiForgeryToken()
+        <div class="mb-2">
+            <input type="password" name="confirmPassword" class="form-control" placeholder="Reset password from appsettings.json" required />
+        </div>
+        <button type="submit" class="btn btn-danger btn-sm">Reset All Data</button>
+    </form>
+</div>
+
 <div class="card p-3 mt-3">
     <h5>Temporary Files</h5>
     <p class="text-muted small mb-2">Delete all files stored under TempFilesLocal.</p>

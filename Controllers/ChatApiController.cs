@@ -1,4 +1,5 @@
 using BuildWorkflow.AICenter;
+using BuildWorkflow.Models;
 using BuildWorkflow.Data;
 using BuildWorkflow.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -41,6 +42,13 @@ public class ChatApiController : ControllerBase
             userId = parsedUserId;
         }
 
+        if (userId.HasValue)
+        {
+            var chatUser = await _db.Users.FindAsync(userId.Value);
+            if (chatUser == null || !chatUser.HasModulePermission(UserModulePermission.Chat))
+                return (IActionResult?)Forbid() ?? Forbid();
+        }
+
         if (request.AttachedFileIds != null && request.AttachedFileIds.Length > 0)
         {
             var validationResult = await ValidateAttachmentLimitsAsync(request.AttachedFileIds, cancellationToken);
@@ -61,6 +69,7 @@ public class ChatApiController : ControllerBase
         }
     }
 
+    [Authorize]
     [HttpPost("knowledge/search")]
     public async Task<IActionResult> SearchKnowledge([FromBody] KnowledgeSearchRequest request, CancellationToken cancellationToken)
     {
@@ -72,14 +81,30 @@ public class ChatApiController : ControllerBase
         if (Guid.TryParse(userIdValue, out var parsedUserId)) userId = parsedUserId;
 
         var isAdmin = User.IsInRole("Admin") || User.IsInRole("OrgAdmin") || User.IsInRole("PlatformAdmin");
-        var available = isAdmin
-            ? await _db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken)
-            : (userId.HasValue
-                ? await _db.UserRagBuckets.Where(a => a.UserId == userId.Value).Select(a => a.RagBucketId).ToListAsync(cancellationToken)
-                : await _db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken));
-        if (!isAdmin && userId.HasValue && available.Count == 0)
+        if (!isAdmin && userId.HasValue)
+        {
+            var skUser = await _db.Users.FindAsync(userId.Value);
+            if (skUser == null || !skUser.HasModulePermission(UserModulePermission.RagRead))
+                return Forbid();
+        }
+        List<Guid> available;
+        if (isAdmin)
         {
             available = await _db.RagBuckets.Where(b => b.IsActive).Select(b => b.Id).ToListAsync(cancellationToken);
+        }
+        else if (userId.HasValue)
+        {
+            available = await _db.UserRagBuckets
+                .Where(a => a.UserId == userId.Value)
+                .Include(a => a.RagBucket)
+                .Where(a => a.RagBucket != null && a.RagBucket.IsActive)
+                .Select(a => a.RagBucketId)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            return Unauthorized();
         }
 
         var requested = (request.BucketIds ?? Array.Empty<Guid>()).Where(id => id != Guid.Empty).Distinct().ToList();
@@ -131,6 +156,17 @@ public class ChatApiController : ControllerBase
         if (Guid.TryParse(userIdValue, out var parsedUserId))
         {
             userId = parsedUserId;
+        }
+
+        if (userId.HasValue)
+        {
+            var chatUser = await _db.Users.FindAsync(userId.Value);
+            if (chatUser == null || !chatUser.HasModulePermission(UserModulePermission.Chat))
+            {
+                Response.StatusCode = 403;
+                await Response.WriteAsync("Forbidden", cancellationToken);
+                return;
+            }
         }
 
         if (request.AttachedFileIds != null && request.AttachedFileIds.Length > 0)
